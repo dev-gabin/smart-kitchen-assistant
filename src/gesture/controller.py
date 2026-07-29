@@ -35,8 +35,8 @@ class GestureController(QObject):
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
             max_num_hands=max_num_hands,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
+            min_detection_confidence=0.7,
+            min_tracking_confidence=0.7,
         )
         self.mp_drawing = mp.solutions.drawing_utils
 

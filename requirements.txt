@@ -3,11 +3,11 @@ ultralytics>=8.1.0
 torch
 torchvision
 numpy
-opencv-python
+opencv-contrib-python==4.10.0.84
 pandas
 python-dateutil
 requests
-
+opencv-contrib-python Version: 5.0.0.93
 # --- Data & Configuration ---
 pyyaml
 
