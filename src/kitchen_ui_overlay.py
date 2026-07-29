@@ -64,14 +64,14 @@ class kitchen_App(QWidget):
         main_layout = QVBoxLayout()
         main_layout.setSpacing(10)
 
-        # [상단] 타이틀 바
-        title_label = QLabel("🔍 Smart Kitchen Assistant")
-        title_label.setStyleSheet("font-size: 16px; padding: 5px;")
-        main_layout.addWidget(title_label)
+        # [상단] 타이틀 바 ->self추가
+        self.title_label = QLabel("🔍 Smart Kitchen Assistant")
+        self.title_label.setStyleSheet("font-size: 16px; padding: 5px;")
+        main_layout.addWidget(self.title_label)
 
-        line1 = QFrame(); line1.setFrameShape(QFrame.HLine)
-        line1.setStyleSheet("border-top: 1.5px solid #000000;")
-        main_layout.addWidget(line1)
+        self.line1 = QFrame(); self.line1.setFrameShape(QFrame.HLine)
+        self.line1.setStyleSheet("border-top: 1.5px solid #000000;")
+        main_layout.addWidget(self.line1)
 
         # ----------------------------------------------------
         # [중단] 메인 화면 (웹캠 뷰 + 우측 냄비 타이머)
@@ -183,21 +183,45 @@ class kitchen_App(QWidget):
         screen = self.screen().geometry()
         
         if not self.is_mini_mode:
-            # 📌 [트러블슈팅 포인트 2] 미니모드 진입: 항상 위 속성 부여
+            # 📌 [트러블슈팅 포인트 2] 미니모드 진입: 항상 위 속성 부여 및 테두리(제목바) 제거
             # - 창이 다른 프로그램(유튜브, VSCode 등) 뒤로 숨지 않도록 최상단 고정 속성을 줍니다.
-            self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+            # - 알람 시계처럼 깔끔하게 보이도록 창 테두리(Frameless)를 없애 상단 제목바를 숨깁니다.
+            self.setWindowFlags(
+                Qt.Window | 
+                Qt.FramelessWindowHint | 
+                Qt.WindowStaysOnTopHint
+            )
             
-            # 📌 [트러블슈팅 포인트 3] 미니모드 크기 및 위치 조정
-            # - 우측 하단 구석에 쏙 들어가도록 크기(250x180)와 좌표를 계산합니다.
-            # - 화면 밖으로 잘려 나간다면 여기서 숫자를 더 작게 줄여보세요!
-            self.resize(250, 180)
-            # ✨ 창의 실제 크기(self.width, self.height)를 변수로 사용하여 어떤 화면이든 안쪽으로 쏙 들어오게 계산!
+            # 🔥 [추가된 핵심] 카메라 때문에 걸어뒀던 최소 크기 제한을 일시적으로 풀어줍니다!
+            self.setMinimumSize(1, 1)
+            
+            # 📌 [트러블슈팅 포인트 11] 지능형 타이머 (작동 중인 것만 남기기)
+            # - 글씨에 "--:--" 가 있으면 타이머가 멈춘 상태이므로 숨깁니다.
+            # - 숫자가 돌아가는(작동 중인) 타이머만 찾아서 남기고 개수를 셉니다.
+            active_timers = 0
+            pot_labels = [self.lbl_pot1, self.lbl_pot2, self.lbl_pot3, self.lbl_pot4]
+            
+            for pot_lbl in pot_labels:
+                if "--:--" in pot_lbl.text():
+                    pot_lbl.hide()
+                else:
+                    pot_lbl.show()
+                    active_timers += 1
+            
+            # 📌 [트러블슈팅 포인트 12] 다이내믹 창 크기 및 위치 조정
+            # - 살아남은 타이머 개수에 맞춰 창의 세로 길이를 알아서 조절합니다.
+            if active_timers == 0:
+                self.resize(180, 80) # 모두 멈춰있으면 기본 미니 사이즈
+            else:
+                self.resize(180, 40 + (active_timers * 40)) # 1개면 80, 2개면 120... 늘어남
+            
+            # ✨ 변경된 크기(self.height)를 기준으로 우측 하단 구석에 딱 맞게 좌표를 이동시킵니다!
             self.move(
                 screen.width() + screen.x() - self.width() - 20,   # 오른쪽 벽에서 안쪽으로 20픽셀 여백
-                screen.height() + screen.y() - self.height() - 20  # 아래쪽 벽에서 안쪽으로 20픽셀 여백 (작업표시줄 회피)
+                screen.height() + screen.y() - self.height() - 20  # 아래쪽 벽에서 안쪽으로 20픽셀 여백
             )
-            # 📌 [트러블슈팅 포인트 4] 불필요한 위젯 숨기기 (핵심 타이머만 남기기)
-            # - 거대한 웹캠 화면과 각종 버튼들을 숨겨서 미니모드 공간을 확보합니다.
+            
+            # 📌 [트러블슈팅 포인트 4] 불필요한 위젯 숨기기
             self.image_label.hide()
             self.btn_pause.hide()
             self.btn_reset.hide()
@@ -206,16 +230,21 @@ class kitchen_App(QWidget):
             self.lbl_selected.hide()
             self.lbl_smoke.hide()
             self.lbl_fps.hide()
+            # 🔥 제목과 가로줄 숨기기
+            self.title_label.hide()
+            self.line1.hide()
             
             # 📌 [트러블슈팅 포인트 5] 속성 변경 후 UI 새로고침
-            # - PySide6에서는 창 속성이나 플래그를 바꾼 후 반드시 .show()를 해줘야 화면에 반영됩니다!
             self.show() 
             self.is_mini_mode = True
-            print(">> [DEBUG] 미니 모드로 전환 완료 (우측 하단 고정)")
+            print(f">> [DEBUG] 미니 모드로 전환 완료 (돌아가는 타이머: {active_timers}개)")
             
         else:
             # 📌 [트러블슈팅 포인트 6] 기본모드 복귀: 항상 위 속성 해제
             self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
+            
+            # 🔄 기본모드로 돌아갈 때는 최소 크기 제한도 원래대로 복구해 줍니다.
+            self.setMinimumSize(0, 0)
             
             # 📌 [트러블슈팅 포인트 7] 원래 크기(1100x700) 및 화면 정중앙 좌표 재계산
             self.resize(1100, 700)
@@ -232,6 +261,14 @@ class kitchen_App(QWidget):
             self.lbl_selected.show()
             self.lbl_smoke.show()
             self.lbl_fps.show()
+            self.title_label.show()
+            self.line1.show()
+            
+            # 🔥 [추가] 미니모드에서 숨겼던 타이머 4개를 다시 전부 보이게 살려냅니다!
+            self.lbl_pot1.show()
+            self.lbl_pot2.show()
+            self.lbl_pot3.show()
+            self.lbl_pot4.show()
             
             # 📌 [트러블슈팅 포인트 9] 복귀 후 UI 새로고침
             self.show()
@@ -240,8 +277,8 @@ class kitchen_App(QWidget):
             
         # 📌 [트러블슈팅 포인트 10] 초점(Focus) 강제 전환 제어
         # - 손을 흔들 때 유튜브나 다른 창으로 조작 권한(Alt+Tab)을 넘겨주는 명령어입니다.
-        # - 만약 이 기능 때문에 포커스가 자꾸 뺏겨서 불편하다면 이 줄을 지우거나 주석(#) 처리하세요!
         pyautogui.hotkey('alt', 'tab')
+        
     def start_webcam(self):
         if self.cap is None or not self.cap.isOpened():
             self.cap = cv2.VideoCapture(0)
