@@ -4,6 +4,9 @@ torch
 torchvision
 numpy
 opencv-python
+pandas
+python-dateutil
+requests
 
 # --- Data & Configuration ---
 pyyaml
@@ -11,3 +14,4 @@ pyyaml
 # --- OS Control & Dataset ---
 pyautogui
 roboflow
+
