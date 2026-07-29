@@ -154,7 +154,29 @@ class kitchen_App(QWidget):
         
         main_layout.addLayout(control_layout)
         self.setLayout(main_layout)
+        # ==========================================
+        # 📌 [트러블슈팅 포인트 5] 타이머 데이터 초기화 및 QTimer 설정
+        # - 제어할 화구 상태와 남은 시간을 기록하는 변수들입니다.
+        # - ⚠️ 주의: 반드시 self.lbl_pot1 ~ 4 가 만들어진 이후(아래쪽)에 이 코드가 와야 에러가 안 납니다!
+        # ==========================================
+        self.selected_pot = None           
+        self.pot_times = [0, 0, 0, 0]      
+        self.pot_states = ["대기", "대기", "대기", "대기"]  
+        self.pot_labels = [self.lbl_pot1, self.lbl_pot2, self.lbl_pot3, self.lbl_pot4]
 
+        # 1초(1000ms)마다 카운트다운을 수행할 메인 타이머 심장박동 시작!
+        self.master_timer = QTimer(self)
+        self.master_timer.timeout.connect(self.update_countdowns)
+        self.master_timer.start(1000)
+
+        # ==========================================
+        # 📌 [트러블슈팅 포인트 6] 리모컨(Gesture)과 기계(UI) 연결
+        # - 제스처 코드에서 쏜 전파(Signal)를 메인 UI의 함수들과 연결하는 끈입니다.
+        # ==========================================
+        self.gesture_controller.pot_selected_signal.connect(self.select_pot)
+        self.gesture_controller.timer_start_signal.connect(self.start_selected_timer)
+        self.gesture_controller.timer_pause_signal.connect(self.pause_selected_timer)
+        self.gesture_controller.timer_reset_signal.connect(self.reset_selected_timer)
     # ==========================================
     # 🎯 2. 화구 선택 시 블랙 박스로 반전! (하이라이트)
     # ==========================================
@@ -278,6 +300,83 @@ class kitchen_App(QWidget):
         # 📌 [트러블슈팅 포인트 10] 초점(Focus) 강제 전환 제어
         # - 손을 흔들 때 유튜브나 다른 창으로 조작 권한(Alt+Tab)을 넘겨주는 명령어입니다.
         pyautogui.hotkey('alt', 'tab')
+    # ==========================================
+    # 📌 [트러블슈팅 포인트 7] 타이머 제어 핵심 함수들
+    # - 제스처 신호를 받아서 실제로 타이머를 돌리고 화면 글씨를 바꾸는 기계 역할입니다.
+    # ==========================================
+
+    def select_pot(self, pot_num):
+        """손가락 1~4개 감지 시 실행: 제어할 화구 선택 및 강조"""
+        if 1 <= pot_num <= 4:
+            self.selected_pot = pot_num
+            self.update_pot_styles()
+            print(f">> [화구 선택] {pot_num}번 화구가 선택되었습니다.")
+
+    def start_selected_timer(self):
+        """엄지 척(주먹) 감지 시 실행: 선택된 화구 타이머 시작"""
+        if self.selected_pot is None:
+            print(">> [알림] 제어할 화구를 먼저 선택해주세요!")
+            return
+            
+        idx = self.selected_pot - 1
+        # 시간이 0초이면 기본 5분(300초)을 자동으로 세팅해줍니다.
+        if self.pot_times[idx] == 0:
+            self.pot_times[idx] = 300
+            
+        self.pot_states[idx] = "실행"
+        print(f">> [타이머 시작] {self.selected_pot}번 화구 작동!")
+
+    def pause_selected_timer(self):
+        """손바닥 감지 시 실행: 선택된 화구 일시정지"""
+        if self.selected_pot is not None:
+            idx = self.selected_pot - 1
+            self.pot_states[idx] = "정지"
+            print(f">> [타이머 정지] {self.selected_pot}번 화구 일시정지!")
+
+    def reset_selected_timer(self):
+        """주먹 감지 시 실행: 선택된 화구 0초로 리셋"""
+        if self.selected_pot is not None:
+            idx = self.selected_pot - 1
+            self.pot_times[idx] = 0
+            self.pot_states[idx] = "대기"
+            self.refresh_pot_label(idx)
+            print(f">> [초기화] {self.selected_pot}번 화구 타이머 리셋!")
+
+    def update_countdowns(self):
+        """1초마다 째깍째깍 실행되며 숫자를 깎는 카운트다운 함수"""
+        for i in range(4):
+            if self.pot_states[i] == "실행" and self.pot_times[i] > 0:
+                self.pot_times[i] -= 1
+                self.refresh_pot_label(i)
+                
+                # 0초가 땡! 하고 끝났을 때 알람 발생
+                if self.pot_times[i] == 0:
+                    self.pot_states[i] = "대기"
+                    self.refresh_pot_label(i)
+                    print(f"🔔 [알람] {i+1}번 화구 조리가 완료되었습니다! 삐비빅!!")
+
+    def refresh_pot_label(self, idx):
+        """글씨를 분:초(MM:SS) 예쁜 모양으로 바꿔서 화면에 표시"""
+        pot_num = idx + 1
+        t = self.pot_times[idx]
+        
+        if t > 0:
+            minutes = t // 60
+            seconds = t % 60
+            time_str = f"{minutes:02d}:{seconds:02d}"
+            self.pot_labels[idx].setText(f"🍲 {pot_num} {time_str}")
+        else:
+            self.pot_labels[idx].setText(f"🍲 {pot_num} --:--")
+
+    def update_pot_styles(self):
+        """선택된 화구만 까만색으로 눈에 띄게 강조해주는 함수"""
+        for i, lbl in enumerate(self.pot_labels):
+            if (i + 1) == self.selected_pot:
+                # 선택된 화구: 까만 바탕에 하얀 글씨, 굵게!
+                lbl.setStyleSheet("background-color: #000000; color: #FFFFFF; padding: 4px; border-radius: 4px; font-weight: bold;")
+            else:
+                # 안 선택된 화구: 원래대로 투명하게
+                lbl.setStyleSheet("background-color: transparent; color: #000000; padding: 4px;")
         
     def start_webcam(self):
         if self.cap is None or not self.cap.isOpened():
