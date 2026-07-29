@@ -8,7 +8,14 @@ __pycache__/
 .venv/
 venv/
 env/
+.data/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Dataset (large, download separately from Roboflow)
+data/raw_smoke_dataset/
+
+# Training run outputs (logs, checkpoints, plots)
+runs/
