@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxL
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QImage, QPixmap
 from src.gesture import GestureController
+from src.gesture.youtube_control import YoutubeController
 
 
 class kitchen_App(QWidget):
@@ -17,10 +18,13 @@ class kitchen_App(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame)
         self.is_mini_mode = False
+        self.youtube_controller = YoutubeController()
+
         self.gesture_controller = None
         try:
             self.gesture_controller = GestureController()
             self.gesture_controller.swipe_detected.connect(self.on_snap_swipe)
+            self.gesture_controller.hand_move_detected.connect(self.youtube_controller.handle_vertical_motion)
         except Exception as e:
             print(f"[kitchen_App] 제스처 컨트롤러 초기화 실패: {e}")
 
@@ -89,6 +93,11 @@ class kitchen_App(QWidget):
 
         # 3. Alt+Tab 실행하여 다른 창으로 전환
         pyautogui.hotkey('alt', 'tab')
+
+    def on_pause(self):
+        if self.is_mini_mode:
+            pyautogui.hotkey('space')
+
 
     def start_webcam(self):
         """웹캠 시작"""
