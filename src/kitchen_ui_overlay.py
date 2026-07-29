@@ -6,10 +6,9 @@ from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QImage, QPixmap, QIcon
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, 
-    QVBoxLayout, QHBoxLayout, QSizePolicy
+    QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame
 )
 from src.gesture import GestureController
-
 
 class kitchen_App(QWidget):
     def __init__(self):
@@ -21,7 +20,7 @@ class kitchen_App(QWidget):
         # 1) 팀원분의 GestureController 생성
         self.gesture_controller = GestureController()
         
-        # 2) 팀원분 코드의 스와이프 신호(swipe_detected)를 내 창 축소 함수(on_snap_swipe)와 연결!
+        # 2) 스와이프 신호를 창 축소 함수와 연결
         self.gesture_controller.swipe_detected.connect(self.on_snap_swipe)
         
         self.is_mini_mode = False
@@ -30,177 +29,219 @@ class kitchen_App(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame)
 
-        # UI 화면 배치 초기화 (새로운 다크모드 적용!)
+        # UI 화면 배치 초기화 (✨새로운 화이트&블랙 모던 UI 적용!)
         self.init_UI()
         
         # 앱 실행 시 웹캠 자동 시작
         self.start_webcam()
 
-
     # ==========================================
-    # 🎨 1. 새로운 UI 디자인 (init_UI)
+    # 🎨 1. 새로운 UI 디자인 (화이트 & 블랙)
     # ==========================================
     def init_UI(self):
         self.setWindowTitle("🍳 Smart Kitchen Assistant")
-        self.resize(1100, 700) # 예쁜 비율로 살짝 키웠습니다.
-        self.setStyleSheet("background-color: #181824; font-family: 'Segoe UI';")
+        self.resize(1100, 700) 
+        
+        # 전체 색상 테마 (화이트 앤 블랙 모던)
+        self.setStyleSheet("""
+            QWidget { 
+                background-color: #FFFFFF; 
+                color: #000000; 
+                font-family: 'Malgun Gothic', 'Segoe UI', sans-serif; 
+            }
+            QLabel { font-size: 14px; font-weight: bold; }
+            QPushButton { 
+                background-color: #F8F9FA; 
+                border: 1.5px solid #000000; 
+                border-radius: 6px; 
+                padding: 6px 12px; 
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #E9ECEF; }
+        """)
 
         main_layout = QVBoxLayout()
+        main_layout.setSpacing(10)
 
-        # ---------------------------
-        # [상단] 카메라 & 상태창 영역
-        # ---------------------------
-        top_layout = QHBoxLayout()
-        
-        # 카메라 영역
-        self.image_label = QLabel("📷 카메라 연결 대기 중...")
+        # [상단] 타이틀 바
+        title_label = QLabel("🔍 Smart Kitchen Assistant")
+        title_label.setStyleSheet("font-size: 16px; padding: 5px;")
+        main_layout.addWidget(title_label)
+
+        line1 = QFrame(); line1.setFrameShape(QFrame.HLine)
+        line1.setStyleSheet("border-top: 1.5px solid #000000;")
+        main_layout.addWidget(line1)
+
+        # ----------------------------------------------------
+        # [중단] 메인 화면 (웹캠 뷰 + 우측 냄비 타이머)
+        # ----------------------------------------------------
+        middle_layout = QHBoxLayout()
+
+        # 📷 카메라 뷰 (웹캠 화면이 들어갈 자리)
+        self.image_label = QLabel("카메라 연결 대기 중...")
         self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setStyleSheet("background-color: black; color: white; border-radius: 15px;")
-        self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        
-        # 우측 상태창 (제스처, 선택된 화구, 연기 감지)
-        status_layout = QVBoxLayout()
-        self.label_gesture = QLabel("👍 제스처 : 없음")
-        self.label_selected = QLabel("🔥 선택 : -")
-        self.label_smoke = QLabel("🟢 SAFE")
-        
-        for label in [self.label_gesture, self.label_selected, self.label_smoke]:
-            label.setAlignment(Qt.AlignCenter)
-            label.setMinimumHeight(60)
-            label.setStyleSheet("""
-                background-color: #2b2b3c;
-                color: white;
-                border-radius: 10px;
-                font-size: 16px;
-                font-weight: bold;
-            """)
-            status_layout.addWidget(label)
-        status_layout.addStretch()
 
-        top_layout.addWidget(self.image_label, stretch=3)
-        top_layout.addLayout(status_layout, stretch=1)
+        self.image_label.setMinimumSize(640, 480) # 카메라가 맘대로 줄거나 커지지 않게 뼈대 고정 함수 추가
+        self.image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        #카메라 무한 증식오류 Expanding-> Ignored(카메라 원래 사진크기 무시)
+        self.image_label.setStyleSheet("""
+            background-color: #F8F9FA; 
+            border: 1.5px dashed #000000; 
+            border-radius: 8px;
+            color: #ADB5BD;
+        """)
 
-        # ---------------------------
-        # [하단] 화구 카드 영역 (4개)
-        # ---------------------------
-        cards_layout = QHBoxLayout()
-        self.timer_cards = [] # 선택 시 테두리 색을 바꾸기 위해 카드를 리스트에 저장
+        # 🍲 우측 냄비 타이머 리스트
+        timer_layout = QVBoxLayout()
+        timer_layout.setSpacing(15)
         
-        # 반복문으로 화구 카드 4개를 뚝딱 생성!
-        for i in range(1, 5):
-            card = self.create_burner_card(f"{i}번 화구")
-            self.timer_cards.append(card)
-            cards_layout.addWidget(card)
+        self.lbl_pot1 = QLabel("🍲 1 --:--")
+        self.lbl_pot2 = QLabel("🍲 2 --:--")
+        self.lbl_pot3 = QLabel("🍲 3 --:--")
+        self.lbl_pot4 = QLabel("🍲 4 --:--")
+        
+        # (나중에 제스처로 선택 시 색상이 반전되도록 기본값 설정)
+        for pot_lbl in [self.lbl_pot1, self.lbl_pot2, self.lbl_pot3, self.lbl_pot4]:
+            pot_lbl.setStyleSheet("padding: 4px;")
+            timer_layout.addWidget(pot_lbl)
+            
+        timer_layout.addStretch()
 
-        main_layout.addLayout(top_layout, stretch=2)
-        main_layout.addLayout(cards_layout, stretch=1)
+        middle_layout.addWidget(self.image_label, stretch=4) # 카메라 화면을 넓게!
+        middle_layout.addSpacing(20)
+        middle_layout.addLayout(timer_layout, stretch=1)
+        
+        main_layout.addLayout(middle_layout, stretch=1)
+
+        line2 = QFrame(); line2.setFrameShape(QFrame.HLine)
+        line2.setStyleSheet("border-top: 1.5px solid #000000;")
+        main_layout.addWidget(line2)
+
+        # ----------------------------------------------------
+        # [하단 1] 상태창 (Gesture, Selected, Smoke)
+        # ----------------------------------------------------
+        status_layout = QHBoxLayout()
+        self.lbl_gesture = QLabel("Gesture: ✋ 없음")
+        self.lbl_selected = QLabel("Pot: -")
+        self.lbl_smoke = QLabel("Smoke: ✔️ Safe")
+        
+        for lbl in [self.lbl_gesture, self.lbl_selected, self.lbl_smoke]:
+            lbl.setAlignment(Qt.AlignCenter)
+            status_layout.addWidget(lbl)
+            
+        main_layout.addLayout(status_layout)
+
+        line3 = QFrame(); line3.setFrameShape(QFrame.HLine)
+        line3.setStyleSheet("border-top: 1.5px solid #000000;")
+        main_layout.addWidget(line3)
+
+        # ----------------------------------------------------
+        # [하단 2] 컨트롤 버튼창
+        # ----------------------------------------------------
+        control_layout = QHBoxLayout()
+        self.btn_pause = QPushButton("⏸ Pause")
+        self.btn_reset = QPushButton("↺ Reset")
+        self.btn_widget = QPushButton("📌 Widget Mode")
+        
+        control_layout.addWidget(self.btn_pause)
+        control_layout.addWidget(self.btn_reset)
+        control_layout.addWidget(self.btn_widget)
+        control_layout.addStretch()
+        
+        self.lbl_fps = QLabel("FPS 60")
+        control_layout.addWidget(self.lbl_fps)
+        
+        main_layout.addLayout(control_layout)
         self.setLayout(main_layout)
 
     # ==========================================
-    # 🛠️ 2. 화구 카드 찍어내는 함수
-    # ==========================================
-    def create_burner_card(self, burner_title):
-        card_layout = QVBoxLayout()
-        
-        # ------------------------------------------------
-        # 🍳 1. 가출한 냄비 아이콘 찾아오기 & 크기 키우기
-        # ------------------------------------------------
-        icon_label = QLabel()
-        
-        # 🚨 주의: 파일 이름이 "cooking.png"가 맞는지 꼭 확인해 주세요! (images 폴더 안)
-        # 만약 다른 이름(예: cooking2.png)으로 저장하셨다면 그 이름으로 바꿔주세요!
-        pixmap = QPixmap("images/cooking.png.png").scaled(60, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation) # 크기도 50->60으로 키움!
-        icon_label.setPixmap(pixmap)
-        icon_label.setAlignment(Qt.AlignCenter)
-
-        title_label = QLabel(burner_title)
-        title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: white; background: transparent;")
-
-        card_layout.addWidget(icon_label)
-        card_layout.addWidget(title_label)
-
-        # 남은 시간 표시
-        time_label = QLabel("00:00")
-        time_label.setAlignment(Qt.AlignCenter)
-        time_label.setStyleSheet("font-size: 36px; font-weight: bold; color: #ff9f43; background: transparent;")
-        card_layout.addWidget(time_label)
-
-        # ------------------------------------------------
-        # ➕➖ 2. 콩알만한 버튼 아이콘 큼직하게 키우기
-        # ------------------------------------------------
-        btn_layout = QHBoxLayout()
-        
-        btn_minus = QPushButton(" -10초")
-        btn_minus.setIcon(QIcon("images/minus.png.png")) # 마이너스 이미지 이름 확인!
-        btn_minus.setIconSize(QSize(28, 28)) # 👈 16에서 28로 확 키웠습니다!
-
-        btn_plus = QPushButton(" +10초")
-        btn_plus.setIcon(QIcon("images/plus.png.png"))   # 플러스 이미지 이름 확인!
-        btn_plus.setIconSize(QSize(28, 28)) # 👈 16에서 28로 확 키웠습니다!
-        
-        btn_layout.addWidget(btn_minus)
-        btn_layout.addWidget(btn_plus)
-        card_layout.addLayout(btn_layout)
-
-        card_widget = QWidget()
-        card_widget.setLayout(card_layout)
-        
-        # 카드 기본 디자인
-        card_widget.setStyleSheet("""
-            QWidget {
-                background-color: #2b2b3c;
-                border-radius: 15px;
-            }
-            QPushButton {
-                background-color: #3b3b58;
-                color: white;
-                border-radius: 8px;
-                padding: 10px;       /* 👈 아이콘이 커진 만큼 여백도 조금 늘려줬어요 */
-                font-size: 14px;     /* 👈 글자 크기도 살짝 키움 */
-                font-weight: bold;
-                border: none;
-            }
-            QPushButton:hover { background-color: #4e4e76; }
-        """)
-        return card_widget
-
-    # ==========================================
-    # 🎯 3. 제스처로 화구 선택 시 테두리 강조!
+    # 🎯 2. 화구 선택 시 블랙 박스로 반전! (하이라이트)
     # ==========================================
     def select_burner(self, num):
-        # 1. 모든 카드를 원래 기본 색상으로 되돌리기
-        for card in self.timer_cards:
-            card.setStyleSheet("""
-                QWidget { background-color: #2b2b3c; border: none; border-radius: 15px; }
-                QPushButton { background-color: #3b3b58; color: white; border-radius: 8px; padding: 8px; font-weight: bold; border: none; }
-            """)
+        # 1. 전부 기본 텍스트(흰 배경, 검은 글씨)로 초기화
+        default_style = "color: #000000; background-color: transparent; padding: 4px;"
+        self.lbl_pot1.setStyleSheet(default_style)
+        self.lbl_pot2.setStyleSheet(default_style)
+        self.lbl_pot3.setStyleSheet(default_style)
+        self.lbl_pot4.setStyleSheet(default_style)
         
-        # 2. 선택된 카드(num)만 화려한 오렌지색 테두리 적용!
-        if 1 <= num <= len(self.timer_cards):
-            self.timer_cards[num - 1].setStyleSheet("""
-                QWidget { background-color: #2b2b3c; border: 3px solid #ff9f43; border-radius: 15px; }
-                QPushButton { background-color: #3b3b58; color: white; border-radius: 8px; padding: 8px; font-weight: bold; border: none; }
-            """)
+        # 2. 선택된 화구만 모던하게 블랙 박스로 반전!
+        active_style = "color: #FFFFFF; background-color: #000000; border-radius: 4px; padding: 4px;"
+        if num == 1: self.lbl_pot1.setStyleSheet(active_style)
+        elif num == 2: self.lbl_pot2.setStyleSheet(active_style)
+        elif num == 3: self.lbl_pot3.setStyleSheet(active_style)
+        elif num == 4: self.lbl_pot4.setStyleSheet(active_style)
 
-
-    # (이 아래는 기존 카메라 및 제스처 연동 코드 그대로 유지)
+    # ==========================================
+    # 🛠️ 3. 이하 웹캠 및 제스처 기능 (수정 없이 유지)
+    # ==========================================
     def on_snap_swipe(self):
-        screen = QApplication.primaryScreen().geometry()
+        # 📌 [트러블슈팅 포인트 1] 모니터 인식 위치
+        # - 듀얼 모니터 환경에서 창이 현재 떠 있는 그 특정 모니터의 좌표/크기 정보를 가져옵니다.
+        # - 만약 엉뚱한 모니터로 튀거나 좌표가 이상하다면 이 부분을 확인하세요!
+        screen = self.screen().geometry()
+        
         if not self.is_mini_mode:
-            self.resize(300, 220)
-            self.move(screen.width() - 320, screen.height() - 260)
+            # 📌 [트러블슈팅 포인트 2] 미니모드 진입: 항상 위 속성 부여
+            # - 창이 다른 프로그램(유튜브, VSCode 등) 뒤로 숨지 않도록 최상단 고정 속성을 줍니다.
+            self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+            
+            # 📌 [트러블슈팅 포인트 3] 미니모드 크기 및 위치 조정
+            # - 우측 하단 구석에 쏙 들어가도록 크기(250x180)와 좌표를 계산합니다.
+            # - 화면 밖으로 잘려 나간다면 여기서 숫자를 더 작게 줄여보세요!
+            self.resize(250, 180)
+            # ✨ 창의 실제 크기(self.width, self.height)를 변수로 사용하여 어떤 화면이든 안쪽으로 쏙 들어오게 계산!
+            self.move(
+                screen.width() + screen.x() - self.width() - 20,   # 오른쪽 벽에서 안쪽으로 20픽셀 여백
+                screen.height() + screen.y() - self.height() - 20  # 아래쪽 벽에서 안쪽으로 20픽셀 여백 (작업표시줄 회피)
+            )
+            # 📌 [트러블슈팅 포인트 4] 불필요한 위젯 숨기기 (핵심 타이머만 남기기)
+            # - 거대한 웹캠 화면과 각종 버튼들을 숨겨서 미니모드 공간을 확보합니다.
+            self.image_label.hide()
+            self.btn_pause.hide()
+            self.btn_reset.hide()
+            self.btn_widget.hide()
+            self.lbl_gesture.hide()
+            self.lbl_selected.hide()
+            self.lbl_smoke.hide()
+            self.lbl_fps.hide()
+            
+            # 📌 [트러블슈팅 포인트 5] 속성 변경 후 UI 새로고침
+            # - PySide6에서는 창 속성이나 플래그를 바꾼 후 반드시 .show()를 해줘야 화면에 반영됩니다!
+            self.show() 
             self.is_mini_mode = True
-            print(">> [UI] 미니 모드 전환 (우측 하단)")
+            print(">> [DEBUG] 미니 모드로 전환 완료 (우측 하단 고정)")
+            
         else:
+            # 📌 [트러블슈팅 포인트 6] 기본모드 복귀: 항상 위 속성 해제
+            self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
+            
+            # 📌 [트러블슈팅 포인트 7] 원래 크기(1100x700) 및 화면 정중앙 좌표 재계산
             self.resize(1100, 700)
-            center_x = (screen.width() - 1100) // 2
-            center_y = (screen.height() - 700) // 2
+            center_x = screen.x() + (screen.width() - 1100) // 2
+            center_y = screen.y() + (screen.height() - 700) // 2
             self.move(center_x, center_y)
+            
+            # 📌 [트러블슈팅 포인트 8] 숨겨두었던 카메라와 모든 버튼들 다시 복구하기
+            self.image_label.show()
+            self.btn_pause.show()
+            self.btn_reset.show()
+            self.btn_widget.show()
+            self.lbl_gesture.show()
+            self.lbl_selected.show()
+            self.lbl_smoke.show()
+            self.lbl_fps.show()
+            
+            # 📌 [트러블슈팅 포인트 9] 복귀 후 UI 새로고침
+            self.show()
             self.is_mini_mode = False
-            print(">> [UI] 기본 모드 전환 (화면 중앙)")
+            print(">> [DEBUG] 기본 모드로 복귀 완료 (중앙 정렬)")
+            
+        # 📌 [트러블슈팅 포인트 10] 초점(Focus) 강제 전환 제어
+        # - 손을 흔들 때 유튜브나 다른 창으로 조작 권한(Alt+Tab)을 넘겨주는 명령어입니다.
+        # - 만약 이 기능 때문에 포커스가 자꾸 뺏겨서 불편하다면 이 줄을 지우거나 주석(#) 처리하세요!
         pyautogui.hotkey('alt', 'tab')
-
     def start_webcam(self):
         if self.cap is None or not self.cap.isOpened():
             self.cap = cv2.VideoCapture(0)
@@ -218,23 +259,23 @@ class kitchen_App(QWidget):
                 if getattr(self, 'gesture_controller', None) is not None:
                     try:
                         frame, gestures = self.gesture_controller.process(frame)
-                        print(gestures)
-
+                        
+                        # 제스처가 감지되었을 때 UI 업데이트 (새로운 라벨 변수명 적용)
                         if gestures:
                             gesture_name = gestures[0]["gesture"]
-                            self.label_gesture.setText(f"Gesture : {gesture_name}")
+                            self.lbl_gesture.setText(f"Gesture: 👍 {gesture_name}")
 
                             if gesture_name == "one":
-                                self.label_selected.setText("Selected : 🔥 1번")
+                                self.lbl_selected.setText("Pot: ♨️ 1")
                                 self.select_burner(1)
                             elif gesture_name == "two":
-                                self.label_selected.setText("Selected : 🔥 2번")
+                                self.lbl_selected.setText("Pot: ♨️ 2")
                                 self.select_burner(2)
                             elif gesture_name == "three":
-                                self.label_selected.setText("Selected : 🔥 3번")
+                                self.lbl_selected.setText("Pot: ♨️ 3")
                                 self.select_burner(3)
                             elif gesture_name == "four":
-                                self.label_selected.setText("Selected : 🔥 4번")
+                                self.lbl_selected.setText("Pot: ♨️ 4")
                                 self.select_burner(4)
                     except Exception as e:
                         print(f"[kitchen_App] 제스처 처리 중 오류 발생: {e}")

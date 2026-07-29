@@ -3,11 +3,12 @@ ultralytics>=8.1.0
 torch
 torchvision
 numpy
-opencv-contrib-python==4.10.0.84
 pandas
 python-dateutil
 requests
-opencv-contrib-python Version: 5.0.0.93
+opencv-contrib-python==5.0.0.93 
+#버전 충돌 오류: 그대로 git 했는데 한쪽은 opencv-python==5.0.0.93
+#다른쪽은 pencv-contrib-python==5.0.0.93 였음
 # --- Data & Configuration ---
 pyyaml
 
