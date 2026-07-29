@@ -14,4 +14,4 @@ pyyaml
 # --- OS Control & Dataset ---
 pyautogui
 roboflow
-
+mediapipe==0.10.14
