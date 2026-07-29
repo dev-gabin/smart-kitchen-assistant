@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (QWidget,
                                QVBoxLayout, QHBoxLayout)
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QImage, QPixmap
+from src.gesture_controller import GestureController
 
 
 class kitchen_App(QWidget):
@@ -14,6 +15,9 @@ class kitchen_App(QWidget):
         self.cap = None
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame) # 타이머가 울릴 때마다 프레임 갱신
+
+        # 제스처 감지기
+        self.gesture_controller = GestureController()
 
         self.init_UI()
 
@@ -70,15 +74,18 @@ class kitchen_App(QWidget):
         if self.cap and self.cap.isOpened():
             ret, frame = self.cap.read()
             if ret:
-                # 1. OpenCV(BGR) -> RGB 변환
+                # 1. 손 감지 (프레임에 랜드마크가 그려지고, 인식된 제스처 목록을 받음)
+                frame, gestures = self.gesture_controller.process(frame)
+
+                # 2. OpenCV(BGR) -> RGB 변환
                 rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-                # 2. QImage 변환
+                # 3. QImage 변환
                 h, w, ch = rgb_image.shape
                 bytes_per_line = ch * w
                 qt_image = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
 
-                # 3. QLabel 크기에 맞게 Scaled Pixmap 생성 후 적용
+                # 4. QLabel 크기에 맞게 Scaled Pixmap 생성 후 적용
                 pixmap = QPixmap.fromImage(qt_image)
                 scaled_pixmap = pixmap.scaled(
                     self.image_label.size(),
