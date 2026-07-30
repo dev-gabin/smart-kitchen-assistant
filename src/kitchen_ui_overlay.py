@@ -19,6 +19,7 @@ class kitchen_App(QWidget):
         # 스와이프 시그널 연결 (위젯 모드 토글)
         self.gesture_controller.swipe_detected.connect(self.on_snap_swipe)
         self.is_mini_mode = False
+        self.normal_window_flags = self.windowFlags()  # 정상 모드 원래 창 플래그 보관
 
         # 웹캠 프레임 갱신용 타이머
         self.timer = QTimer(self)
@@ -88,6 +89,13 @@ class kitchen_App(QWidget):
         
         self.sidebar_buttons = [self.btn_home, self.btn_timer, self.btn_gesture, self.btn_env, self.btn_setting]
         self.current_sidebar_index = 0
+
+        # 사이드바 버튼 마우스 클릭 시그널 연결
+        self.btn_home.clicked.connect(lambda: self.set_sidebar_focus(0))
+        self.btn_timer.clicked.connect(lambda: self.set_sidebar_focus(1))
+        self.btn_gesture.clicked.connect(lambda: self.set_sidebar_focus(2))
+        self.btn_env.clicked.connect(lambda: self.set_sidebar_focus(3))
+        self.btn_setting.clicked.connect(lambda: self.set_sidebar_focus(4))
         
         sidebar_layout.addStretch()
 
@@ -190,7 +198,7 @@ class kitchen_App(QWidget):
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setMinimumSize(500, 340)
         self.image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        # 🔥 [핵심 수정] 카메라 양옆 여백의 크림색 줄을 없애고 다크 모던 톤(#1A1A1A)으로 변경하여 깔끔하게 정돈!
+        # 카메라 양옆 레터박스 다크 모던 톤(#1A1A1A) 적용
         self.image_label.setStyleSheet("background-color: #1A1A1A; border-radius: 14px;")
         
         cam_layout.addLayout(cam_header)
@@ -198,7 +206,7 @@ class kitchen_App(QWidget):
         cam_layout.addWidget(self.image_label, stretch=1)
         self.middle_layout.addWidget(self.cam_frame, stretch=6)
 
-        # 2. 타이머 리스트 카드 (불필요한 선 제거 및 아이콘 큼직하게 40x40 정돈)
+        # 2. 타이머 리스트 카드
         self.timer_frame = QFrame()
         self.timer_frame.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 20px;")
         self.timer_layout = QVBoxLayout(self.timer_frame)
@@ -331,7 +339,7 @@ class kitchen_App(QWidget):
         self.gesture_controller.timer_smart_start_signal.connect(self.smart_start_timers)
 
     def create_timer_item(self, num, icon_file, name, time_lbl):
-        """개별 타이머 카드 위젯 생성 함수 (아이콘 주변 테두리 제거 및 40x40 크기 정돈)"""
+        """개별 타이머 카드 위젯 생성 함수 (아이콘 테두리 제거 및 40x40 큼직한 크기 정돈)"""
         wrapper = QFrame()
         wrapper.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
         wrapper.setFixedHeight(75)
@@ -680,20 +688,25 @@ class kitchen_App(QWidget):
         self.pot_labels[idx].setText(f"{t//60:02d}:{t%60:02d}" if t > 0 else "--:--")
 
     def on_snap_swipe(self):
-        """전체 화면 ↔ 미니 위젯 모드 전환 함수"""
+        """전체 화면 ↔ 우측 하단 고정 미니 위젯 모드 전환 함수 (검은 테두리 버그 완전 해결)"""
         screen = self.screen().geometry()
+        self.hide()
+        
         if not self.is_mini_mode:
+            # [미니모드 진입]
             self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+
             self.sidebar.hide(); self.cam_frame.hide(); self.status_frame.hide(); self.control_frame.hide(); self.header_frame.hide(); self.t_header_frame.hide()
             self.image_label.setMinimumSize(0, 0)
             self.main_layout.setContentsMargins(0, 0, 0, 0); self.main_layout.setSpacing(0)
             self.content_layout.setContentsMargins(0, 0, 0, 0); self.content_layout.setSpacing(0)
             self.middle_layout.setSpacing(0); self.timer_layout.setContentsMargins(0, 0, 0, 0); self.timer_layout.setSpacing(0)
-            self.timer_frame.setStyleSheet("background: transparent; border: none;")
+            
+            self.timer_frame.setStyleSheet("background-color: #FFFFFF; border: 1.5px solid #EAE0D5; border-radius: 20px;")
             
             active_timers = 0
-            for i, state in enumerate(self.pot_states):
-                if state == "실행":
+            for i in range(4):
+                if self.pot_times[i] > 0:
                     self.pot_wrappers[i].show()
                     self.pot_wrappers[i].setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
                     active_timers += 1
@@ -703,16 +716,25 @@ class kitchen_App(QWidget):
             if active_timers == 0:
                 self.pot_wrappers[0].show()
                 self.pot_wrappers[0].setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
-                target_height = 75
+                target_height = 95
             else: 
-                target_height = active_timers * 75
+                target_height = (active_timers * 75) + 20
             
             self.setMinimumSize(0, 0); self.setFixedSize(280, target_height)
             self.move(screen.width() + screen.x() - self.width() - 20, screen.height() + screen.y() - self.height() - 20)
             self.show(); self.is_mini_mode = True
             self.toggle_switch.setChecked(True)
         else:
-            self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
+            # 🔥 [대시보드 복구 시 검은 테두리/오류 완벽 차단 리셋]
+            self.setWindowFlags(self.normal_window_flags)  # 실행 시작 당시 정상 창 모양 그대로 복원
+            self.setStyleSheet("""
+                QWidget { 
+                    background-color: #FDF9F3; 
+                    color: #3E3832; 
+                    font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; 
+                }
+            """)
+            
             self.image_label.setMinimumSize(500, 340)
             self.main_layout.setContentsMargins(15, 15, 15, 15); self.main_layout.setSpacing(20)
             self.content_layout.setContentsMargins(0, 0, 0, 0); self.content_layout.setSpacing(15)
@@ -728,6 +750,12 @@ class kitchen_App(QWidget):
             
             self.show(); self.raise_(); self.activateWindow(); self.is_mini_mode = False
             self.toggle_switch.setChecked(False)
+
+    # 미니모드 복구 백업 (더블클릭)
+    def mouseDoubleClickEvent(self, event):
+        if self.is_mini_mode and event.button() == Qt.LeftButton:
+            self.on_snap_swipe()
+            event.accept()
 
     def start_webcam(self):
         """웹캠 비디오 스트리밍 시작 함수"""

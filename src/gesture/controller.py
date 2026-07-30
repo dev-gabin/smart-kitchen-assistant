@@ -54,7 +54,7 @@ class GestureController(QObject):
         self.last_time_add_action = 0
         self.last_toggle_action = 0       
 
-        # ✊ 마이다스 손 방지 (주먹 유지 시간 체크용)
+        # ✊ 마이다스 손 및 이동 중 오인식 방지 (제스처 유지 시간 체크용)
         self.last_seen_gesture = None
         self.gesture_hold_start = 0
 
@@ -224,15 +224,14 @@ class GestureController(QObject):
                         if wrist.x >= 0.3:
                             g_name = current_frame_gestures[idx]
                             
-                            # ✊ 주먹(fist) 마이다스 손 방지 (0.5초 동안 유지해야 인정)
+                            # ⚡ [반응성 개선된 오인식 방지] 0.18초(약 5프레임)로 반응 속도를 대폭 높여 쾌적하게 인식되도록 조정
                             if g_name != '?':
                                 if g_name != self.last_seen_gesture:
                                     self.last_seen_gesture = g_name
                                     self.gesture_hold_start = curr_time
                                 
-                                if g_name == 'fist':
-                                    if curr_time - self.gesture_hold_start < 0.5:
-                                        break
+                                if curr_time - self.gesture_hold_start < 0.18:
+                                    break
                             else:
                                 self.last_seen_gesture = None
                                 break
