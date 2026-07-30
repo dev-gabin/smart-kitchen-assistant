@@ -16,5 +16,3 @@ pyyaml
 pyautogui
 roboflow
 mediapipe==0.10.14
-
-PySide6
