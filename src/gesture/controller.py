@@ -21,8 +21,6 @@ _ANGLE_TO = [1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19]
 
 class GestureController(QObject):
     swipe_detected = Signal()
-    # 천천히 위/아래로 손을 움직였을 때 ("up" 또는 "down") 전달할 시그널
-    hand_move_detected = Signal(str)
 
     # 타이머 제어용 시그널 정의
     pot_selected_signal = Signal(int)
@@ -33,14 +31,15 @@ class GestureController(QObject):
     def __init__(self, max_num_hands: int = 1, cooldown_sec: float = 1.0,
                  gesture_data_path: str = 'data/gesture_train.csv'):
         super().__init__()
-        # __init__ 내부에 변수 초기화 확인
-        self.prev_x = None
-        self.prev_y = None
-        self.prev_time = None
+        self.cooldown_sec = 1.0
         self.last_action_time = 0
-        self.cooldown_sec = 1.0  # 쿨다운 1초
 
-        # 세로 이동(볼륨 조절용) 속도 추적 변수
+        # A: 스냅 전용 쿨다운 — 제스처 쿨다운과 분리
+        self.last_swipe_time = 0
+        # B: 최근 0.4초 (timestamp, x) 이력 버퍼
+        self._swipe_history: list = []
+
+        # 세로 이동 추적 변수
         self.prev_y = None
         self.prev_y_time = None
         self.last_vertical_time = 0
@@ -112,13 +111,12 @@ class GestureController(QObject):
                 except Exception as e:
                     gesture_name = '?'
 
-                # wrist = hand_landmarks.landmark[0]
-                index_tip = hand_landmarks.landmark[8]
-                # position = (int(wrist.x * w), int(wrist.y * h))
-                # gestures.append({'gesture': gesture_name, 'position': position})
+                wrist = hand_landmarks.landmark[0]
+                position = (int(wrist.x * w), int(wrist.y * h))
+                gestures.append({'gesture': gesture_name, 'position': position})
 
                 cv2.putText(
-                    frame, gesture_name.upper(), (1, 1),
+                    frame, gesture_name.upper(), (position[0], position[1] + 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA
                 )
                 curr_time = time.time()
@@ -150,54 +148,48 @@ class GestureController(QObject):
         return frame, gestures
 
     def _handle_snap_swipe(self, hand_landmarks):
-        # 검지(8), 중지(12), 약지(16), 소지(20) 끝의 x 평균으로 스냅 감지
+        # 검지(8), 중지(12), 약지(16), 소지(20) 끝의 x, y 평균
         fingertips = [hand_landmarks.landmark[i] for i in (8, 12, 16, 20)]
         curr_x = sum(lm.x for lm in fingertips) / len(fingertips)
+        curr_y = sum(lm.y for lm in fingertips) / len(fingertips)
         curr_time = time.time()
 
+        # 이력 추가 후 0.4초 밖 항목 제거 (x, y 모두 기록)
+        self._swipe_history.append((curr_time, curr_x, curr_y))
+        self._swipe_history = [(t, x, y) for t, x, y in self._swipe_history if curr_time - t <= 0.4]
+
         try:
-            if self.prev_x is not None and self.prev_y is not None and self.prev_time is not None:
-                dt = curr_time - self.prev_time
+            # A: 제스처 쿨다운과 독립된 스냅 전용 쿨다운
+            if curr_time - self.last_swipe_time <= self.cooldown_sec:
+                return
 
-                # 🔥 [민감도 완화] 0.8초 이내, 속도 임계값 0.4 이상으로 완화하여 스냅 인식률 향상
-                if 0 < dt < 0.8:
-                    speed_x = (curr_x - self.prev_x) / dt
-                    speed_y = (curr_y - self.prev_y) / dt
+            if len(self._swipe_history) < 3:
+                return
 
-                    # 쿨다운 타임 체크
-                    if curr_time - self.last_action_time > self.cooldown_sec:
+            oldest_time, oldest_x, oldest_y = self._swipe_history[0]
+            dt = curr_time - oldest_time
+            if dt <= 0:
+                return
 
-                        # 1. [가로 스냅] X축 속도가 Y축 속도보다 월등히 크고, 속도가 3.0 이상일 때
-                        if abs(speed_x) > abs(speed_y) * 3 and abs(speed_x) > 3.0:
-                            print(f"[HORIZONTAL SWIPE] Speed X: {speed_x:.2f} -> 가로 스냅 감지!")
-                            
-                            # 가로 스냅 신호 전송 (UI 축소 / Alt+Tab)
-                            self.swipe_detected.emit()
+            disp_x = curr_x - oldest_x
+            disp_y = curr_y - oldest_y
+            speed_x = disp_x / dt
+            speed_y = disp_y / dt
 
-                            self.last_action_time = curr_time
-                            self.prev_x, self.prev_y, self.prev_time = None, None, None
-                            return
-
-                        # 2. [세로 스냅] Y축 속도가 X축 속도보다 월등히 크고, 속도가 2.5 이상일 때
-                        elif abs(speed_y) > abs(speed_x) * 3 and abs(speed_y) > 2.5:
-                            # OpenCV 화면 좌표계는 아래로 갈수록 Y가 커지므로,
-                            # Y 속도가 음수(-)면 손을 위로 튕긴 것 (Up), 양수(+)면 아래로 튕긴 것 (Down)
-                            direction = 'up' if speed_y < 0 else 'down'
-                            print(f"[VERTICAL VOLUME] Speed Y: {speed_y:.2f} -> {direction} 감지!")
-
-                    if abs(speed_x) > 0.4 and (curr_time - self.last_action_time > self.cooldown_sec):
-                        print(f"[SWIPE] Speed: {speed_x:.2f} -> 스냅 감지 성공!")
-
-                        # UI로 축소/Alt+Tab 신호 전달
-                        self.swipe_detected.emit()
-
-                            self.last_action_time = curr_time
-                            self.prev_x, self.prev_y, self.prev_time = None, None, None
-                            return
+            # 스냅 판정 — 아래 4가지 조건 모두 충족해야 인정
+            # 1) 수평 속도가 충분히 빠를 것
+            # 2) 수평 이동거리가 충분할 것
+            # 3) 수직 이동거리가 절대적으로 작을 것 (손 올리기 차단 핵심)
+            # 4) 수평 속도가 수직 속도의 3배 이상일 것
+            if (abs(speed_x) > 0.5
+                    and abs(disp_x) > 0.15
+                    and abs(disp_y) < 0.10
+                    and abs(speed_x) > abs(speed_y) * 3.0):
+                direction = "right" if disp_x > 0 else "left"
+                print(f"[SWIPE] {direction} | SpeedX:{speed_x:.2f} SpeedY:{speed_y:.2f} DispX:{disp_x:.2f} DispY:{disp_y:.2f}")
+                self.swipe_detected.emit()
+                self.last_swipe_time = curr_time
+                self._swipe_history.clear()
 
         except Exception as e:
-            print(f"[GestureController] 스냅 처리 중 오류 발생: {e}")
-        finally:
-            self.prev_x = curr_x
-            self.prev_y = curr_y
-            self.prev_time = curr_time
+            print(f"[GestureController] 스냅 처리 중 오류: {e}")
