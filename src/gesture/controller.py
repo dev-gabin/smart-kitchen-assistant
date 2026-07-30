@@ -10,7 +10,7 @@ pyautogui.FAILSAFE = False
 
 GESTURE_NAMES = {
     0: 'fist', 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five',
-    6: 'six', 7: 'rock', 8: 'spiderman', 9: 'yeah', 10: 'ok',
+    6: 'six', 7: 'rock', 8: 'spiderman', 9: 'two', 10: 'ok',    # 2가 yeah 로 인식되므로 9는 two로 변경
 }
 
 _PARENT_JOINTS = [0, 1, 2, 3, 0, 5, 6, 7, 0, 9, 10, 11, 0, 13, 14, 15, 0, 17, 18, 19]
@@ -112,8 +112,6 @@ class GestureController(QObject):
                     frame, gesture_name.upper(), (position[0], position[1] + 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA
                 )
-                # 손목 스냅 감지 함수 호출(누락주의!!!!!)
-                self._handle_snap_swipe(wrist)
                 curr_time = time.time()
                 
                 # 제스처 액션 처리 (쿨다운 적용)
@@ -137,13 +135,15 @@ class GestureController(QObject):
                         self.last_action_time = curr_time
                         print("[GESTURE] 타이머 초기화 시그널 발송!")
 
-                # 조건문 없이 항상 스냅 검사를 실행합니다.
-                    self._handle_snap_swipe(wrist)
+                # 손가락 끝 스냅 감지 (검지 끝 landmark[8] 기준)
+                self._handle_snap_swipe(hand_landmarks)
 
         return frame, gestures
 
-    def _handle_snap_swipe(self, wrist):
-        curr_x = wrist.x
+    def _handle_snap_swipe(self, hand_landmarks):
+        # 검지(8), 중지(12), 약지(16), 소지(20) 끝의 x 평균으로 스냅 감지
+        fingertips = [hand_landmarks.landmark[i] for i in (8, 12, 16, 20)]
+        curr_x = sum(lm.x for lm in fingertips) / len(fingertips)
         curr_time = time.time()
 
         try:
