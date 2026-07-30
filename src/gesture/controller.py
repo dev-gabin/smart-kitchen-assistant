@@ -21,6 +21,8 @@ _ANGLE_TO = [1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19]
 
 class GestureController(QObject):
     swipe_detected = Signal()
+    # 천천히 위/아래로 손을 움직였을 때 ("up" 또는 "down") 전달할 시그널
+    hand_move_detected = Signal(str)
 
     # 타이머 제어용 시그널 정의
     pot_selected_signal = Signal(int)
@@ -31,11 +33,17 @@ class GestureController(QObject):
     def __init__(self, max_num_hands: int = 1, cooldown_sec: float = 1.0,
                  gesture_data_path: str = 'data/gesture_train.csv'):
         super().__init__()
-        self.cooldown_sec = cooldown_sec
-        self.last_action_time = 0
-
+        # __init__ 내부에 변수 초기화 확인
         self.prev_x = None
+        self.prev_y = None
         self.prev_time = None
+        self.last_action_time = 0
+        self.cooldown_sec = 1.0  # 쿨다운 1초
+
+        # 세로 이동(볼륨 조절용) 속도 추적 변수
+        self.prev_y = None
+        self.prev_y_time = None
+        self.last_vertical_time = 0
 
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
@@ -104,12 +112,13 @@ class GestureController(QObject):
                 except Exception as e:
                     gesture_name = '?'
 
-                wrist = hand_landmarks.landmark[0]
-                position = (int(wrist.x * w), int(wrist.y * h))
-                gestures.append({'gesture': gesture_name, 'position': position})
+                # wrist = hand_landmarks.landmark[0]
+                index_tip = hand_landmarks.landmark[8]
+                # position = (int(wrist.x * w), int(wrist.y * h))
+                # gestures.append({'gesture': gesture_name, 'position': position})
 
                 cv2.putText(
-                    frame, gesture_name.upper(), (position[0], position[1] + 20),
+                    frame, gesture_name.upper(), (1, 1),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA
                 )
                 curr_time = time.time()
@@ -147,12 +156,34 @@ class GestureController(QObject):
         curr_time = time.time()
 
         try:
-            if self.prev_x is not None and self.prev_time is not None:
+            if self.prev_x is not None and self.prev_y is not None and self.prev_time is not None:
                 dt = curr_time - self.prev_time
 
                 # 🔥 [민감도 완화] 0.8초 이내, 속도 임계값 0.4 이상으로 완화하여 스냅 인식률 향상
                 if 0 < dt < 0.8:
                     speed_x = (curr_x - self.prev_x) / dt
+                    speed_y = (curr_y - self.prev_y) / dt
+
+                    # 쿨다운 타임 체크
+                    if curr_time - self.last_action_time > self.cooldown_sec:
+
+                        # 1. [가로 스냅] X축 속도가 Y축 속도보다 월등히 크고, 속도가 3.0 이상일 때
+                        if abs(speed_x) > abs(speed_y) * 3 and abs(speed_x) > 3.0:
+                            print(f"[HORIZONTAL SWIPE] Speed X: {speed_x:.2f} -> 가로 스냅 감지!")
+                            
+                            # 가로 스냅 신호 전송 (UI 축소 / Alt+Tab)
+                            self.swipe_detected.emit()
+
+                            self.last_action_time = curr_time
+                            self.prev_x, self.prev_y, self.prev_time = None, None, None
+                            return
+
+                        # 2. [세로 스냅] Y축 속도가 X축 속도보다 월등히 크고, 속도가 2.5 이상일 때
+                        elif abs(speed_y) > abs(speed_x) * 3 and abs(speed_y) > 2.5:
+                            # OpenCV 화면 좌표계는 아래로 갈수록 Y가 커지므로,
+                            # Y 속도가 음수(-)면 손을 위로 튕긴 것 (Up), 양수(+)면 아래로 튕긴 것 (Down)
+                            direction = 'up' if speed_y < 0 else 'down'
+                            print(f"[VERTICAL VOLUME] Speed Y: {speed_y:.2f} -> {direction} 감지!")
 
                     if abs(speed_x) > 0.4 and (curr_time - self.last_action_time > self.cooldown_sec):
                         print(f"[SWIPE] Speed: {speed_x:.2f} -> 스냅 감지 성공!")
@@ -160,13 +191,13 @@ class GestureController(QObject):
                         # UI로 축소/Alt+Tab 신호 전달
                         self.swipe_detected.emit()
 
-                        self.last_action_time = curr_time
-                        self.prev_x = None
-                        self.prev_time = None
-                        return
+                            self.last_action_time = curr_time
+                            self.prev_x, self.prev_y, self.prev_time = None, None, None
+                            return
 
         except Exception as e:
-            print(f"[GestureController] 스와이프 처리 중 오류 발생: {e}")
+            print(f"[GestureController] 스냅 처리 중 오류 발생: {e}")
         finally:
             self.prev_x = curr_x
+            self.prev_y = curr_y
             self.prev_time = curr_time

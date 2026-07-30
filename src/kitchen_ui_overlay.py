@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame
 )
 from src.gesture import GestureController
+from src.gesture.youtube_control import YoutubeController
 
 class kitchen_App(QWidget):
     def __init__(self):
