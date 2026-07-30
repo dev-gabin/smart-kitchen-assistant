@@ -244,12 +244,16 @@ class kitchen_App(QWidget):
         
         self.btn_pause = QPushButton(" 일시정지"); self.btn_pause.setIcon(self.get_icon("22_pause.png"))
         self.btn_pause.setStyleSheet(btn_base)
+        
         self.btn_reset = QPushButton(" 초기화"); self.btn_reset.setIcon(self.get_icon("25_refresh.png"))
         self.btn_reset.setStyleSheet(btn_base)
         
         self.btn_alert_off = QPushButton(" 경보 끄기"); self.btn_alert_off.setIcon(self.get_icon("19_muted_bell.png"))
         self.btn_alert_off.setStyleSheet("background-color: #FFF2F2; border: 1px solid #FFCDCD; border-radius: 14px; font-size: 14px; font-weight: 800; color: #D32F2F;")
         
+        self.btn_pause.clicked.connect(self.pause_all_timers)
+        self.btn_reset.clicked.connect(self.reset_all_timers)
+
         for b in [self.btn_pause, self.btn_reset, self.btn_alert_off]:
             b.setIconSize(QSize(18, 18))
 
@@ -276,11 +280,15 @@ class kitchen_App(QWidget):
         self.master_timer.timeout.connect(self.update_countdowns)
         self.master_timer.start(1000)
 
-        # 제스처 시그널 연결
+        # 기존 개별 제어 제스처 시그널 연결
         self.gesture_controller.pot_selected_signal.connect(self.select_pot)
         self.gesture_controller.timer_start_signal.connect(self.start_selected_timer)
         self.gesture_controller.timer_pause_signal.connect(self.pause_selected_timer)
         self.gesture_controller.timer_reset_signal.connect(self.reset_selected_timer)
+        
+        # 🔥 [추가] 양손 콤보(전체 제어) 제스처 시그널을 하단 버튼 함수와 동일하게 연결
+        self.gesture_controller.timer_pause_all_signal.connect(self.pause_all_timers)
+        self.gesture_controller.timer_reset_all_signal.connect(self.reset_all_timers)
 
     def create_timer_item(self, num, icon_file, name, time_lbl):
         wrapper = QFrame()
@@ -368,17 +376,12 @@ class kitchen_App(QWidget):
                     w.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 16px;")
         self.lbl_selected.setText(f"0{num}")
 
-    # ==========================================
-    # 🔥 미니모드 전환 (포커스 & UI 깨짐 완벽 해결본)
-    # ==========================================
     def on_snap_swipe(self):
         screen = self.screen().geometry()
         
         if not self.is_mini_mode:
-            # 창 테두리 없애고(위젯처럼) 최상단 고정
             self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
             
-            # 불필요한 UI 모조리 숨기기
             self.sidebar.hide()
             self.cam_frame.hide()
             self.status_frame.hide()
@@ -386,10 +389,8 @@ class kitchen_App(QWidget):
             self.header_frame.hide()
             self.t_header_frame.hide()
 
-            # 카메라 창 크기 제약 해제 (화면 찢어짐 방지)
             self.image_label.setMinimumSize(0, 0)
             
-            # 레이아웃 여백 강제 0으로 날리기
             self.main_layout.setContentsMargins(0, 0, 0, 0)
             self.main_layout.setSpacing(0)
             self.content_layout.setContentsMargins(0, 0, 0, 0)
@@ -416,11 +417,9 @@ class kitchen_App(QWidget):
             else:
                 target_height = active_timers * 75
 
-            # 강제 크기 고정 (위젯 크기에 맞춤)
             self.setMinimumSize(0, 0)
             self.setFixedSize(280, target_height)
             
-            # 우측 하단으로 이동
             self.move(
                 screen.width() + screen.x() - self.width() - 20,
                 screen.height() + screen.y() - self.height() - 20
@@ -429,13 +428,10 @@ class kitchen_App(QWidget):
             self.is_mini_mode = True
             
         else:
-            # 기본 모드 복구
             self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
             
-            # 카메라 최소 크기 복구
             self.image_label.setMinimumSize(500, 340)
 
-            # 레이아웃 여백 원상 복구
             self.main_layout.setContentsMargins(15, 15, 15, 15)
             self.main_layout.setSpacing(20)
             self.content_layout.setContentsMargins(0, 0, 0, 0)
@@ -444,7 +440,6 @@ class kitchen_App(QWidget):
             self.timer_layout.setContentsMargins(15, 15, 15, 15)
             self.timer_layout.setSpacing(10)
             
-            # 강제 고정 풀기 및 크기 원상 복구
             self.setMinimumSize(1150, 750)
             self.setMaximumSize(16777215, 16777215)
             self.resize(1150, 750)
@@ -470,18 +465,42 @@ class kitchen_App(QWidget):
                     w.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 16px;")
             
             self.show()
-            
-            # 🔥 [트러블 슈팅: 원래 화면으로 복귀 시 창이 다른 창 뒤로 숨는 버그 해결]
-            # 원인: 이전 코드에 포함되어 있던 꼼수(pyautogui.hotkey('alt', 'esc'))가 
-            #       활성 창을 강제로 맨 뒤로 보내버리는 윈도우 단축키였기 때문에 발생한 문제.
-            # 해결: 해당 라이브러리와 꼼수 코드를 완전히 삭제하고, PySide6의 정식 GUI 제어 기능인 
-            #       self.raise_() 와 self.activateWindow() 를 사용하여 창을 최상단으로 끌어올리고 포커스를 부여함.
             self.raise_()
             self.activateWindow()
-            
             self.is_mini_mode = False
 
-    # 타이머 제어 로직들
+    def pause_all_timers(self):
+        any_running = any(state == "실행" for state in self.pot_states)
+        
+        if any_running:
+            for i in range(4):
+                if self.pot_states[i] == "실행":
+                    self.pot_states[i] = "정지"
+                    self.timer_buttons[i].setIcon(self.get_icon("21_play.png"))
+                    self.timer_buttons[i].setStyleSheet("background-color: #E2AD64; border-radius: 15px; border: none;")
+            self.btn_pause.setText(" 전체 재생")
+            self.btn_pause.setIcon(self.get_icon("21_play.png"))
+        else:
+            for i in range(4):
+                if self.pot_states[i] == "정지" and self.pot_times[i] > 0:
+                    self.pot_states[i] = "실행"
+                    self.timer_buttons[i].setIcon(self.get_icon("22_pause.png"))
+                    self.timer_buttons[i].setStyleSheet("background-color: #EAEAEA; border-radius: 15px; border: none;")
+            self.btn_pause.setText(" 일시정지")
+            self.btn_pause.setIcon(self.get_icon("22_pause.png"))
+
+    def reset_all_timers(self):
+        for i in range(4):
+            self.pot_times[i] = 0
+            self.pot_states[i] = "대기"
+            self.refresh_pot_label(i)
+            self.timer_buttons[i].setIcon(self.get_icon("21_play.png"))
+            self.timer_buttons[i].setStyleSheet("background-color: #E2AD64; border-radius: 15px; border: none;")
+        
+        self.btn_pause.setText(" 일시정지")
+        self.btn_pause.setIcon(self.get_icon("22_pause.png"))
+
+    # 개별 타이머 제어 로직들
     def select_pot(self, pot_num):
         if 1 <= pot_num <= 4: self.select_burner(pot_num)
 
@@ -539,10 +558,9 @@ class kitchen_App(QWidget):
                     if gestures:
                         g_name = gestures[0]["gesture"]
                         self.lbl_gesture.setText(g_name.upper())
-                        if g_name == "one": self.select_burner(1)
-                        elif g_name == "two": self.select_burner(2)
-                        elif g_name == "three": self.select_burner(3)
-                        elif g_name == "four": self.select_burner(4)
+                        
+                        # 화구 선택 시그널 등은 이제 GestureController에서 보내므로 UI에서 수신하여 처리됩니다.
+                        # (추가로 여기서 제어하지 않아도 괜찮지만, 기존 오류 회피를 위해 유지합니다)
                 except Exception:
                     pass
 
