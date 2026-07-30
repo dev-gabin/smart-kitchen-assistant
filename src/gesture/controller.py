@@ -10,7 +10,7 @@ pyautogui.FAILSAFE = False
 
 GESTURE_NAMES = {
     0: 'fist', 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five',
-    6: 'six', 7: 'rock', 8: 'spiderman', 9: 'yeah', 10: 'ok',
+    6: 'six', 7: 'rock', 8: 'spiderman', 9: 'two', 10: 'ok',    # 2가 yeah 로 인식되므로 9는 two로 변경
 }
 
 _PARENT_JOINTS = [0, 1, 2, 3, 0, 5, 6, 7, 0, 9, 10, 11, 0, 13, 14, 15, 0, 17, 18, 19]
@@ -20,10 +20,15 @@ _ANGLE_TO = [1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19]
 
 
 class GestureController(QObject):
-    # 스와이프 발생 시 UI로 전달할 시그널 정의
     swipe_detected = Signal()
     # 천천히 위/아래로 손을 움직였을 때 ("up" 또는 "down") 전달할 시그널
     hand_move_detected = Signal(str)
+
+    # 타이머 제어용 시그널 정의
+    pot_selected_signal = Signal(int)
+    timer_start_signal = Signal()
+    timer_pause_signal = Signal()
+    timer_reset_signal = Signal()
 
     def __init__(self, max_num_hands: int = 1, cooldown_sec: float = 1.0,
                  gesture_data_path: str = 'data/gesture_train.csv'):
@@ -43,8 +48,8 @@ class GestureController(QObject):
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
             max_num_hands=max_num_hands,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
+            min_detection_confidence=0.7,
+            min_tracking_confidence=0.7,
         )
         self.mp_drawing = mp.solutions.drawing_utils
 
@@ -116,29 +121,46 @@ class GestureController(QObject):
                     frame, gesture_name.upper(), (1, 1),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA
                 )
+                curr_time = time.time()
 
-                self._handle_snap_swipe(index_tip)
-                # self._handle_vertical_motion(wrist)
-        else:
-            self.prev_x = None
-            self.prev_time = None
-            self.prev_y = None
-            self.prev_y_time = None
+                # 제스처 액션 처리 (쿨다운 적용)
+                if curr_time - self.last_action_time > self.cooldown_sec:
+                    if gesture_name in ['one', 'two', 'three', 'four', 'yeah']:
+                        num_map = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'yeah': 2}
+                        pot_num = num_map[gesture_name]
+                        self.pot_selected_signal.emit(pot_num)
+                        self.last_action_time = curr_time
+                        print(f"[GESTURE] {pot_num}번 화구 선택 시그널 발송!")
+                    elif gesture_name == 'ok':
+                        self.timer_start_signal.emit()
+                        self.last_action_time = curr_time
+                        print("[GESTURE] 타이머 시작 시그널 발송!")
+                    elif gesture_name == 'five':
+                        self.timer_pause_signal.emit()
+                        self.last_action_time = curr_time
+                        print("[GESTURE] 타이머 일시정지 시그널 발송!")
+                    elif gesture_name == 'fist':
+                        self.timer_reset_signal.emit()
+                        self.last_action_time = curr_time
+                        print("[GESTURE] 타이머 초기화 시그널 발송!")
+
+                # 손가락 끝 스냅 감지 (검지 끝 landmark[8] 기준)
+                self._handle_snap_swipe(hand_landmarks)
 
         return frame, gestures
 
-    def _handle_snap_swipe(self, wrist):
-        """가로 스냅 -> 스와이프(Alt+Tab/축소) | 세로 스냅 -> 볼륨 조절(Up/Down)"""
-        curr_x = wrist.x
-        curr_y = wrist.y
+    def _handle_snap_swipe(self, hand_landmarks):
+        # 검지(8), 중지(12), 약지(16), 소지(20) 끝의 x 평균으로 스냅 감지
+        fingertips = [hand_landmarks.landmark[i] for i in (8, 12, 16, 20)]
+        curr_x = sum(lm.x for lm in fingertips) / len(fingertips)
         curr_time = time.time()
 
         try:
             if self.prev_x is not None and self.prev_y is not None and self.prev_time is not None:
                 dt = curr_time - self.prev_time
 
-                # 빠른 움직임(0.15초 이내)만 스냅으로 인정
-                if 0.001 < dt < 0.15:
+                # 🔥 [민감도 완화] 0.8초 이내, 속도 임계값 0.4 이상으로 완화하여 스냅 인식률 향상
+                if 0 < dt < 0.8:
                     speed_x = (curr_x - self.prev_x) / dt
                     speed_y = (curr_y - self.prev_y) / dt
 
@@ -163,8 +185,11 @@ class GestureController(QObject):
                             direction = 'up' if speed_y < 0 else 'down'
                             print(f"[VERTICAL VOLUME] Speed Y: {speed_y:.2f} -> {direction} 감지!")
 
-                            # 세로 스냅 신호 전송 ('up' 또는 'down' 문자열 전달)
-                            self.hand_move_detected.emit(direction)
+                    if abs(speed_x) > 0.4 and (curr_time - self.last_action_time > self.cooldown_sec):
+                        print(f"[SWIPE] Speed: {speed_x:.2f} -> 스냅 감지 성공!")
+
+                        # UI로 축소/Alt+Tab 신호 전달
+                        self.swipe_detected.emit()
 
                             self.last_action_time = curr_time
                             self.prev_x, self.prev_y, self.prev_time = None, None, None

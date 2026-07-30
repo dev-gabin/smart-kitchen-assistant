@@ -3,7 +3,7 @@ from pathlib import Path
 from ultralytics import YOLO
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_YAML = BASE_DIR / "data" / "raw_smoke_dataset" / "archive" / "data.yaml"
+DATA_YAML = BASE_DIR / "data" / "archive" / "data.yaml"
 BASE_MODEL = "yolov8n.pt"
 RUNS_DIR = BASE_DIR / "runs"
 RUN_NAME = "smoke_train"
@@ -16,9 +16,9 @@ def train():
 
     model.train(
         data=str(DATA_YAML),
-        epochs=50,
+        epochs=30,
         imgsz=640,
-        batch=16,
+        batch=64,
         project=str(RUNS_DIR),
         name=RUN_NAME,
     )
