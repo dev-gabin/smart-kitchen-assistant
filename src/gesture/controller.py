@@ -10,7 +10,7 @@ pyautogui.FAILSAFE = False
 
 GESTURE_NAMES = {
     0: 'fist', 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five',
-    6: 'six', 7: 'rock', 8: 'spiderman', 9: 'two', 10: 'ok',    # 2가 yeah 로 인식되므로 9는 two로 변경
+    6: 'six', 7: 'rock', 8: 'spiderman', 9: 'two', 10: 'ok', 11: 'thumbsup',
 }
 
 _PARENT_JOINTS = [0, 1, 2, 3, 0, 5, 6, 7, 0, 9, 10, 11, 0, 13, 14, 15, 0, 17, 18, 19]
@@ -22,30 +22,40 @@ _ANGLE_TO = [1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19]
 class GestureController(QObject):
     swipe_detected = Signal()
 
-    # 타이머 제어용 시그널 정의
     pot_selected_signal = Signal(int)
     timer_start_signal = Signal()
     timer_pause_signal = Signal()
     timer_reset_signal = Signal()
 
-    # 양손 제어용 시그널
     timer_pause_all_signal = Signal()
     timer_reset_all_signal = Signal()
     
-    # 사이드바 위/아래 이동 시그널을 '직접 인덱스 지정(숫자)' 시그널로 변경
     sidebar_focus_signal = Signal(int)
     sidebar_select_signal = Signal()
+    
+    timer_add_time_signal = Signal(int)       
+    timer_toggle_long_mode_signal = Signal()  
+    timer_confirm_signal = Signal()           
+    timer_smart_start_signal = Signal() 
 
-    def __init__(self, max_num_hands: int = 2, cooldown_sec: float = 1.0,
-                 gesture_data_path: str = 'data/gesture_train.csv'):
+    def __init__(self, max_num_hands: int = 2, gesture_data_path: str = 'data/gesture_train.csv'):
         super().__init__()
-        self.cooldown_sec = 1.0
+        self.cooldown_sec = 1.0           
+        self.time_add_cooldown_sec = 3.0  
+        self.toggle_cooldown_sec = 2.5    
+        
         self.last_action_time = 0
+        self.last_time_add_action = 0
+        self.last_toggle_action = 0       
 
-        # A: 스냅 전용 쿨다운 — 제스처 쿨다운과 분리
+        self.last_seen_gesture = None
+        self.gesture_hold_start = 0
+
         self.last_swipe_time = 0
-        # B: 최근 0.4초 (timestamp, x) 이력 버퍼
         self._swipe_history: list = []
+
+        self.input_mode = 'POT_SELECT'
+        self.selected_pot_num = None
 
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
@@ -73,24 +83,22 @@ class GestureController(QObject):
     def _classify_gesture(self, hand_landmarks) -> str:
         if self.knn is None:
             return '?'
-
         joint = np.zeros((21, 3))
         for j, lm in enumerate(hand_landmarks.landmark):
             joint[j] = [lm.x, lm.y, lm.z]
-
         v1 = joint[_PARENT_JOINTS, :]
         v2 = joint[_CHILD_JOINTS, :]
         v = v2 - v1
         v = v / np.linalg.norm(v, axis=1)[:, np.newaxis]
-
-        angle = np.degrees(np.arccos(np.einsum(
-            'nt,nt->n', v[_ANGLE_FROM, :], v[_ANGLE_TO, :]
-        )))
-
+        angle = np.degrees(np.arccos(np.einsum('nt,nt->n', v[_ANGLE_FROM, :], v[_ANGLE_TO, :])))
         data = np.array([angle], dtype=np.float32)
         _, knn_results, _, _ = self.knn.findNearest(data, 3)
         idx = int(knn_results[0][0])
         return GESTURE_NAMES.get(idx, '?')
+
+    def set_mode_pot_select(self):
+        self.input_mode = 'POT_SELECT'
+        print("[CONTROLLER] 모드 변경 ➔ [대기 모드 (화구 포커스 유지됨)]")
 
     def process(self, frame):
         gestures = []
@@ -101,20 +109,34 @@ class GestureController(QObject):
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = self.hands.process(rgb_frame)
         except Exception as e:
-            print(f"[GestureController] 손 인식 중 오류 발생: {e}")
             return frame, gestures
 
         if results.multi_hand_landmarks:
             h, w, _ = frame.shape
             
             for hand_landmarks in results.multi_hand_landmarks:
-                self.mp_drawing.draw_landmarks(
-                    frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS
-                )
-
+                self.mp_drawing.draw_landmarks(frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS)
                 try:
                     gesture_name = self._classify_gesture(hand_landmarks)
-                except Exception as e:
+                    
+                    # 🔥 [강력한 주먹 vs 엄지척 분리기!] 좌표로 수학적 판단!
+                    thumb_tip_y = hand_landmarks.landmark[4].y
+                    index_mcp_y = hand_landmarks.landmark[5].y
+                    
+                    # 검지(8), 중지(12), 약지(16), 새끼(20)의 손끝이 두번째 마디(6,10,14,18)보다 아래(Y값이 큼)에 있는지 검사
+                    tips = [8, 12, 16, 20]
+                    pips = [6, 10, 14, 18]
+                    is_curled = all(hand_landmarks.landmark[tip].y > hand_landmarks.landmark[pip].y for tip, pip in zip(tips, pips))
+                    
+                    if is_curled:
+                        # 4손가락이 접혀있는데 엄지만 위로 확 솟아있으면 -> 엄지척
+                        if thumb_tip_y < (index_mcp_y - 0.04):
+                            gesture_name = 'thumbsup'
+                        # 엄지까지 얌전히 내려와있으면 -> 무조건 주먹 (모델이 ? 띄워도 강제 주먹화)
+                        else:
+                            gesture_name = 'fist'
+                            
+                except Exception:
                     gesture_name = '?'
 
                 wrist = hand_landmarks.landmark[0]
@@ -124,11 +146,10 @@ class GestureController(QObject):
                 hand_x_positions.append(wrist.x)
 
                 cv2.putText(
-                    frame, gesture_name.upper(), (position[0], position[1] + 20),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA
+                    frame, f"{gesture_name.upper()} ({self.input_mode})", (position[0], position[1] + 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0) if self.input_mode=='TIME_INPUT' else (255, 255, 255), 2, cv2.LINE_AA
                 )
 
-                # 구역 방어: 손이 화면 왼쪽(X < 0.3)에 있고, 다른 손이 없을 때만(혹은 단독으로) 메뉴 다이렉트 선택 허용
                 if wrist.x < 0.3 and len(results.multi_hand_landmarks) == 1:
                     curr_time = time.time()
                     if curr_time - self.last_action_time > self.cooldown_sec:
@@ -137,14 +158,10 @@ class GestureController(QObject):
                             idx = menu_map[gesture_name]
                             self.sidebar_focus_signal.emit(idx)
                             self.last_action_time = curr_time
-                            print(f"[SIDEBAR] {idx+1}번째 메뉴 다이렉트 선택")
-                            
                         elif gesture_name == 'ok':
                             self.sidebar_select_signal.emit()
                             self.last_action_time = curr_time
-                            print("[SIDEBAR] 메뉴 선택 클릭!")
 
-            # 스와이프 충돌 방어막 (메뉴로 향할 때 미니모드 발동 차단)
             if len(results.multi_hand_landmarks) == 1:
                 wrist_x = results.multi_hand_landmarks[0].landmark[0].x
                 if wrist_x < 0.3:
@@ -156,11 +173,8 @@ class GestureController(QObject):
 
             curr_time = time.time()
 
-            # 제스처 액션 처리 (쿨다운 적용)
             if curr_time - self.last_action_time > self.cooldown_sec:
                 combo_executed = False
-                
-                # 🔥 [수정] 양손 콤보는 "두 손 중 단 한 손이라도 메인 구역(X >= 0.15)에 걸쳐있기만 하면" 넉넉하게 인정!
                 if len(current_frame_gestures) == 2:
                     at_least_one_in_zone = any(x >= 0.15 for x in hand_x_positions)
                     if at_least_one_in_zone:
@@ -168,98 +182,111 @@ class GestureController(QObject):
                             self.timer_pause_all_signal.emit()
                             self.last_action_time = curr_time
                             combo_executed = True
-                            print("[GESTURE] 양손 보(Five)! 전체 일시정지 시그널 발송!")
-                        
                         elif current_frame_gestures.count('fist') == 2:
                             self.timer_reset_all_signal.emit()
                             self.last_action_time = curr_time
                             combo_executed = True
-                            print("[GESTURE] 양손 주먹(Fist)! 전체 초기화 시그널 발송!")
+                            self.set_mode_pot_select()
 
-                # 2. 양손 콤보가 아니면 단일 제스처 처리
                 if not combo_executed:
                     for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
                         wrist = hand_landmarks.landmark[0]
                         
-                        # 손이 메인 쿠킹 구역(X >= 0.3)일 때만 화구 제어 허용
                         if wrist.x >= 0.3:
                             g_name = current_frame_gestures[idx]
-                            if g_name in ['one', 'two', 'three', 'four', 'yeah']:
-                                num_map = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'yeah': 2}
-                                pot_num = num_map[g_name]
-                                self.pot_selected_signal.emit(pot_num)
-                                self.last_action_time = curr_time
-                                print(f"[GESTURE] {pot_num}번 화구 선택 시그널 발송!")
-                                break 
                             
-                            elif g_name == 'ok':
-                                self.timer_start_signal.emit()
-                                self.last_action_time = curr_time
-                                print("[GESTURE] 타이머 시작 시그널 발송!")
+                            # 🔥 제스처 유지(Hold) 검사 로직
+                            if g_name != '?':
+                                if g_name != self.last_seen_gesture:
+                                    self.last_seen_gesture = g_name
+                                    self.gesture_hold_start = curr_time
+                                
+                                # 주먹(fist) 유지시간 1.0초 -> 0.5초로 파격 단축! 
+                                if g_name == 'fist':
+                                    if curr_time - self.gesture_hold_start < 0.5:
+                                        break
+                            else:
+                                self.last_seen_gesture = None
                                 break
                             
-                            elif g_name == 'five':
-                                self.timer_pause_signal.emit()
-                                self.last_action_time = curr_time
-                                print("[GESTURE] 타이머 일시정지 시그널 발송!")
+                            if self.input_mode == 'POT_SELECT':
+                                if g_name in ['one', 'two', 'three', 'four', 'yeah']:
+                                    num_map = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'yeah': 2}
+                                    pot_num = num_map[g_name]
+                                    self.selected_pot_num = pot_num
+                                    self.input_mode = 'TIME_INPUT'  
+                                    self.pot_selected_signal.emit(pot_num)
+                                    self.last_action_time = curr_time
+                                    break
+
+                            elif self.input_mode == 'TIME_INPUT':
+                                if g_name in ['one', 'three', 'five']:
+                                    if curr_time - self.last_time_add_action > self.time_add_cooldown_sec:
+                                        min_map = {'one': 1, 'three': 3, 'five': 5}
+                                        mins = min_map[g_name]
+                                        self.timer_add_time_signal.emit(mins)
+                                        self.last_time_add_action = curr_time
+                                        self.last_action_time = curr_time
+                                    break
+                                elif g_name == 'rock':
+                                    self.timer_toggle_long_mode_signal.emit()
+                                    self.last_action_time = curr_time
+                                    break
+                                elif g_name == 'ok':
+                                    self.timer_confirm_signal.emit()
+                                    self.last_action_time = curr_time
+                                    self.set_mode_pot_select()  
+                                    break
+
+                            # 마스터 토글
+                            if g_name == 'thumbsup':
+                                if curr_time - self.last_toggle_action > self.toggle_cooldown_sec:
+                                    self.timer_smart_start_signal.emit()
+                                    self.last_toggle_action = curr_time
+                                    self.last_action_time = curr_time
+                                    self.set_mode_pot_select()
+                                break
+
+                            # 개별 정지
+                            if g_name == 'five' and self.input_mode == 'POT_SELECT':
+                                if curr_time - self.last_toggle_action > self.toggle_cooldown_sec:
+                                    self.timer_pause_signal.emit()
+                                    self.last_toggle_action = curr_time
+                                    self.last_action_time = curr_time
                                 break
                             
+                            # 개별 초기화 (이제 0.5초만 쥐면 바로 작동!)
                             elif g_name == 'fist':
                                 self.timer_reset_signal.emit()
+                                self.set_mode_pot_select()
                                 self.last_action_time = curr_time
-                                print("[GESTURE] 타이머 초기화 시그널 발송!")
                                 break
 
         return frame, gestures
 
     def _handle_snap_swipe(self, hand_landmarks):
-        # 검지(8), 중지(12), 약지(16), 소지(20) 끝의 x, y 평균
         fingertips = [hand_landmarks.landmark[i] for i in (8, 12, 16, 20)]
         curr_x = sum(lm.x for lm in fingertips) / len(fingertips)
         curr_y = sum(lm.y for lm in fingertips) / len(fingertips)
         curr_time = time.time()
-
-        # 이력 추가 후 0.4초 밖 항목 제거 (x, y 모두 기록)
         self._swipe_history.append((curr_time, curr_x, curr_y))
         self._swipe_history = [(t, x, y) for t, x, y in self._swipe_history if curr_time - t <= 0.4]
 
         try:
-            # A: 제스처 쿨다운과 독립된 스냅 전용 쿨다운
-            if curr_time - self.last_swipe_time <= self.cooldown_sec:
-                return
-
-            if len(self._swipe_history) < 3:
-                return
-
+            if curr_time - self.last_swipe_time <= self.cooldown_sec: return
+            if len(self._swipe_history) < 3: return
             oldest_time, oldest_x, oldest_y = self._swipe_history[0]
             dt = curr_time - oldest_time
-            if dt <= 0:
-                return
-
+            if dt <= 0: return
             disp_x = curr_x - oldest_x
             disp_y = curr_y - oldest_y
             speed_x = disp_x / dt
             speed_y = disp_y / dt
 
-            # 스냅 판정 — 아래 4가지 조건 모두 충족해야 인정
-            # 1) 수평 속도가 충분히 빠를 것
-            # 2) 수평 이동거리가 충분할 것
-            # 3) 수직 이동거리가 절대적으로 작을 것 (손 올리기 차단 핵심)
-            # 4) 수평 속도가 수직 속도의 3배 이상일 것
-            if (abs(speed_x) > 0.8
-                    and abs(disp_x) > 0.15
-                    and abs(disp_y) < 0.15
-                    and abs(speed_x) > abs(speed_y) * 2.5):
-                
-                # 메뉴 조작하러 왼쪽으로 향할 때 미니모드 오발동 강제 차단 방어막
-                if disp_x < 0 and curr_x < 0.5:
-                    return
-
-                direction = "right" if disp_x > 0 else "left"
-                print(f"[SWIPE] {direction} | SpeedX:{speed_x:.2f} SpeedY:{speed_y:.2f} DispX:{disp_x:.2f} DispY:{disp_y:.2f}")
+            if (abs(speed_x) > 0.8 and abs(disp_x) > 0.15 and abs(disp_y) < 0.15 and abs(speed_x) > abs(speed_y) * 2.5):
+                if disp_x < 0 and curr_x < 0.5: return
                 self.swipe_detected.emit()
                 self.last_swipe_time = curr_time
                 self._swipe_history.clear()
-
-        except Exception as e:
-            print(f"[GestureController] 스냅 처리 중 오류: {e}")
+        except Exception:
+            pass
