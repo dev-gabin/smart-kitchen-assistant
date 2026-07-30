@@ -7,8 +7,8 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, 
     QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame
 )
-# 제스처 컨트롤러 모듈
-from src.gesture import GestureController
+# 폴더 구조(src/gesture/controller.py)에 맞는 정확한 임포트 경로 적용
+from src.gesture.controller import GestureController
 
 class kitchen_App(QWidget):
     def __init__(self):
@@ -84,6 +84,10 @@ class kitchen_App(QWidget):
             btn.setIconSize(QSize(24, 24))
             btn.setFixedHeight(75)
             sidebar_layout.addWidget(btn)
+        
+        # 사이드바 제스처 연동을 위한 버튼 리스트 및 포커스 인덱스 초기화
+        self.sidebar_buttons = [self.btn_home, self.btn_timer, self.btn_gesture, self.btn_env, self.btn_setting]
+        self.current_sidebar_index = 0
         
         sidebar_layout.addStretch()
 
@@ -286,9 +290,12 @@ class kitchen_App(QWidget):
         self.gesture_controller.timer_pause_signal.connect(self.pause_selected_timer)
         self.gesture_controller.timer_reset_signal.connect(self.reset_selected_timer)
         
-        # 🔥 [추가] 양손 콤보(전체 제어) 제스처 시그널을 하단 버튼 함수와 동일하게 연결
+        # 양손 콤보(전체 제어) 제스처 시그널 연결
         self.gesture_controller.timer_pause_all_signal.connect(self.pause_all_timers)
         self.gesture_controller.timer_reset_all_signal.connect(self.reset_all_timers)
+        
+        # 🔥 [수정] 사이드바 '다이렉트 숫자' 시그널 연동!
+        self.gesture_controller.sidebar_focus_signal.connect(self.set_sidebar_focus)
 
     def create_timer_item(self, num, icon_file, name, time_lbl):
         wrapper = QFrame()
@@ -500,6 +507,25 @@ class kitchen_App(QWidget):
         self.btn_pause.setText(" 일시정지")
         self.btn_pause.setIcon(self.get_icon("22_pause.png"))
 
+    # 🔥 [수정] 제스처 컨트롤러가 넘겨주는 숫자(idx)로 주황색 박스를 바로 이동시키는 함수
+    def set_sidebar_focus(self, idx: int):
+        normal_style = """
+            QPushButton { background: transparent; border: none; font-size: 11px; color: #555; padding: 12px 0px; font-weight: bold; border-radius: 12px; }
+            QPushButton:hover { background-color: #F0EBE1; }
+        """
+        active_btn_style = """
+            QPushButton { background-color: #FFF4E6; border: 1px solid #FDE0C5; border-radius: 12px; font-size: 11px; color: #333; padding: 12px 0px; font-weight: bold; }
+        """
+
+        # 이전 버튼 원상복구
+        self.sidebar_buttons[self.current_sidebar_index].setStyleSheet(normal_style)
+        
+        # 새 인덱스 적용 및 주황색 불 켜기
+        self.current_sidebar_index = idx
+        self.sidebar_buttons[self.current_sidebar_index].setStyleSheet(active_btn_style)
+        
+        print(f"[UI] 사이드바 포커스 이동 ➔ {idx+1}번째 메뉴")
+
     # 개별 타이머 제어 로직들
     def select_pot(self, pot_num):
         if 1 <= pot_num <= 4: self.select_burner(pot_num)
@@ -558,9 +584,6 @@ class kitchen_App(QWidget):
                     if gestures:
                         g_name = gestures[0]["gesture"]
                         self.lbl_gesture.setText(g_name.upper())
-                        
-                        # 화구 선택 시그널 등은 이제 GestureController에서 보내므로 UI에서 수신하여 처리됩니다.
-                        # (추가로 여기서 제어하지 않아도 괜찮지만, 기존 오류 회피를 위해 유지합니다)
                 except Exception:
                     pass
 
