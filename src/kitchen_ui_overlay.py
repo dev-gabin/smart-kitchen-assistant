@@ -16,6 +16,7 @@ class kitchen_App(QWidget):
         
         self.cap = None
         self.gesture_controller = GestureController()
+        
         self.gesture_controller.swipe_detected.connect(self.on_snap_swipe)
         self.is_mini_mode = False
 

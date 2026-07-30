@@ -32,7 +32,7 @@ class GestureController(QObject):
     timer_pause_all_signal = Signal()
     timer_reset_all_signal = Signal()
     
-    # 🔥 [수정] 사이드바 위/아래 이동 시그널을 '직접 인덱스 지정(숫자)' 시그널로 변경!
+    # 사이드바 위/아래 이동 시그널을 '직접 인덱스 지정(숫자)' 시그널로 변경
     sidebar_focus_signal = Signal(int)
     sidebar_select_signal = Signal()
 
@@ -46,8 +46,6 @@ class GestureController(QObject):
         self.last_swipe_time = 0
         # B: 최근 0.4초 (timestamp, x) 이력 버퍼
         self._swipe_history: list = []
-
-        # 🔥 [수정] 세로 이동 추적 변수 제거 (더 이상 공중에서 위아래로 긁을 필요 없음)
 
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
@@ -97,6 +95,7 @@ class GestureController(QObject):
     def process(self, frame):
         gestures = []
         current_frame_gestures = []
+        hand_x_positions = []
 
         try:
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -122,27 +121,24 @@ class GestureController(QObject):
                 position = (int(wrist.x * w), int(wrist.y * h))
                 gestures.append({'gesture': gesture_name, 'position': position})
                 current_frame_gestures.append(gesture_name)
+                hand_x_positions.append(wrist.x)
 
                 cv2.putText(
                     frame, gesture_name.upper(), (position[0], position[1] + 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA
                 )
 
-                # 🔥 [수정] 구역 방어: 손이 화면 왼쪽(X < 0.3)에 있을 때, 손가락 1~5를 펴면 메뉴 다이렉트 이동!
-                if wrist.x < 0.3:
+                # 구역 방어: 손이 화면 왼쪽(X < 0.3)에 있고, 다른 손이 없을 때만(혹은 단독으로) 메뉴 다이렉트 선택 허용
+                if wrist.x < 0.3 and len(results.multi_hand_landmarks) == 1:
                     curr_time = time.time()
                     if curr_time - self.last_action_time > self.cooldown_sec:
-                        
-                        # 1~5번 제스처를 인식하면 해당 메뉴 인덱스(0~4)로 바로 꽂아줍니다.
                         if gesture_name in ['one', 'two', 'yeah', 'three', 'four', 'five']:
-                            # 대시보드=0, 타이머=1, 제스처=2, 환경=3, 설정=4
                             menu_map = {'one': 0, 'two': 1, 'yeah': 1, 'three': 2, 'four': 3, 'five': 4}
                             idx = menu_map[gesture_name]
                             self.sidebar_focus_signal.emit(idx)
                             self.last_action_time = curr_time
                             print(f"[SIDEBAR] {idx+1}번째 메뉴 다이렉트 선택")
                             
-                        # 왼쪽 구역에서 OK를 하면 메뉴 선택(클릭) 작동
                         elif gesture_name == 'ok':
                             self.sidebar_select_signal.emit()
                             self.last_action_time = curr_time
@@ -164,26 +160,28 @@ class GestureController(QObject):
             if curr_time - self.last_action_time > self.cooldown_sec:
                 combo_executed = False
                 
-                # 1. 양손 콤보 (전체 정지, 전체 초기화) 우선 판단
+                # 🔥 [수정] 양손 콤보는 "두 손 중 단 한 손이라도 메인 구역(X >= 0.15)에 걸쳐있기만 하면" 넉넉하게 인정!
                 if len(current_frame_gestures) == 2:
-                    if current_frame_gestures.count('five') == 2:
-                        self.timer_pause_all_signal.emit()
-                        self.last_action_time = curr_time
-                        combo_executed = True
-                        print("[GESTURE] 양손 보(Five)! 전체 일시정지 시그널 발송!")
-                    
-                    elif current_frame_gestures.count('fist') == 2:
-                        self.timer_reset_all_signal.emit()
-                        self.last_action_time = curr_time
-                        combo_executed = True
-                        print("[GESTURE] 양손 주먹(Fist)! 전체 초기화 시그널 발송!")
+                    at_least_one_in_zone = any(x >= 0.15 for x in hand_x_positions)
+                    if at_least_one_in_zone:
+                        if current_frame_gestures.count('five') == 2:
+                            self.timer_pause_all_signal.emit()
+                            self.last_action_time = curr_time
+                            combo_executed = True
+                            print("[GESTURE] 양손 보(Five)! 전체 일시정지 시그널 발송!")
+                        
+                        elif current_frame_gestures.count('fist') == 2:
+                            self.timer_reset_all_signal.emit()
+                            self.last_action_time = curr_time
+                            combo_executed = True
+                            print("[GESTURE] 양손 주먹(Fist)! 전체 초기화 시그널 발송!")
 
                 # 2. 양손 콤보가 아니면 단일 제스처 처리
                 if not combo_executed:
                     for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
                         wrist = hand_landmarks.landmark[0]
                         
-                        # 🔥 [방어막 적용] 손이 메인 쿠킹 구역(X >= 0.3)일 때만 화구 제어 허용! (왼쪽이랑 절대 안 겹침)
+                        # 손이 메인 쿠킹 구역(X >= 0.3)일 때만 화구 제어 허용
                         if wrist.x >= 0.3:
                             g_name = current_frame_gestures[idx]
                             if g_name in ['one', 'two', 'three', 'four', 'yeah']:
