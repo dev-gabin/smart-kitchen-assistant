@@ -1,6 +1,8 @@
 import mediapipe as mp
 import sys
 import cv2
+import threading
+import winsound
 import pyautogui
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QImage, QPixmap, QIcon
@@ -10,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 from src.gesture import GestureController
 from src.gesture.youtube_control import YoutubeController
+from src.smoke import SmokeDetector
 
 class kitchen_App(QWidget):
     def __init__(self):
@@ -23,7 +26,20 @@ class kitchen_App(QWidget):
         
         # 2) 스와이프 신호를 창 축소 함수와 연결
         self.gesture_controller.swipe_detected.connect(self.on_snap_swipe)
-        
+
+        # 2) SmokeDetector 생성 및 시그널 연결
+        self.smoke_detector = SmokeDetector()
+        self.smoke_detector.smoke_detected.connect(self.on_smoke_detected)
+        self.smoke_detector.smoke_cleared.connect(self.on_smoke_cleared)
+
+        # 경고음 반복 타이머 (2초 간격)
+        self._alarm_timer = QTimer(self)
+        self._alarm_timer.setInterval(2000)
+        self._alarm_timer.timeout.connect(self._play_alarm)
+
+        # 연기 감지는 매 5프레임마다 실행 (성능 최적화)
+        self._smoke_frame_count = 0
+
         self.is_mini_mode = False
 
         # 타이머 설정 (웹캠 프레임 갱신용)
@@ -378,6 +394,25 @@ class kitchen_App(QWidget):
                 # 안 선택된 화구: 원래대로 투명하게
                 lbl.setStyleSheet("background-color: transparent; color: #000000; padding: 4px;")
         
+    # ==========================================
+    # 연기 감지 핸들러
+    # ==========================================
+    def on_smoke_detected(self, conf: float):
+        print(f"[SMOKE] 연기 감지! 신뢰도: {conf:.0%}")
+        self._play_alarm()
+        self._alarm_timer.start()
+
+    def on_smoke_cleared(self):
+        print("[SMOKE] 연기 사라짐 — 경고 해제")
+        self._alarm_timer.stop()
+
+    def _play_alarm(self):
+        """별도 스레드에서 경고음 재생 (UI 블로킹 방지)"""
+        def _beep():
+            for _ in range(3):
+                winsound.Beep(1000, 300)
+        threading.Thread(target=_beep, daemon=True).start()
+
     def start_webcam(self):
         if self.cap is None or not self.cap.isOpened():
             self.cap = cv2.VideoCapture(0)
@@ -416,6 +451,20 @@ class kitchen_App(QWidget):
                     except Exception as e:
                         print(f"[kitchen_App] 제스처 처리 중 오류 발생: {e}")
 
+                # 연기 감지 (매 5프레임마다 추론)
+                self._smoke_frame_count += 1
+                if self._smoke_frame_count % 5 == 0:
+                    frame, is_smoke, conf = self.smoke_detector.process(frame)
+                    if is_smoke:
+                        self.lbl_smoke.setText(f"Smoke: ⚠️ DETECTED ({conf:.0%})")
+                        self.lbl_smoke.setStyleSheet(
+                            "color: #FFFFFF; background-color: #CC0000; "
+                            "font-weight: bold; padding: 4px; border-radius: 4px;"
+                        )
+                    else:
+                        self.lbl_smoke.setText("Smoke: ✔️ Safe")
+                        self.lbl_smoke.setStyleSheet("")
+
                 rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 h, w, ch = rgb_image.shape
                 bytes_per_line = ch * w
@@ -432,6 +481,8 @@ class kitchen_App(QWidget):
     def closeEvent(self, event):
         if hasattr(self, 'timer'):
             self.timer.stop()
+        if hasattr(self, '_alarm_timer'):
+            self._alarm_timer.stop()
         if hasattr(self, 'cap') and self.cap and self.cap.isOpened():
             self.cap.release()
         event.accept()
