@@ -10,7 +10,7 @@ pyautogui.FAILSAFE = False
 
 GESTURE_NAMES = {
     0: 'fist', 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five',
-    6: 'six', 7: 'rock', 8: 'spiderman', 9: 'yeah', 10: 'ok',
+    6: 'six', 7: 'rock', 8: 'spiderman', 9: 'two', 10: 'ok',    # 2가 yeah 로 인식되므로 9는 two로 변경
 }
 
 _PARENT_JOINTS = [0, 1, 2, 3, 0, 5, 6, 7, 0, 9, 10, 11, 0, 13, 14, 15, 0, 17, 18, 19]
@@ -23,10 +23,10 @@ class GestureController(QObject):
     swipe_detected = Signal()
 
     # 타이머 제어용 시그널 정의
-    pot_selected_signal = Signal(int)     
-    timer_start_signal = Signal()         
-    timer_pause_signal = Signal()         
-    timer_reset_signal = Signal()         
+    pot_selected_signal = Signal(int)
+    timer_start_signal = Signal()
+    timer_pause_signal = Signal()
+    timer_reset_signal = Signal()
 
     def __init__(self, max_num_hands: int = 1, cooldown_sec: float = 1.0,
                  gesture_data_path: str = 'data/gesture_train.csv'):
@@ -112,19 +112,17 @@ class GestureController(QObject):
                     frame, gesture_name.upper(), (position[0], position[1] + 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA
                 )
-                # 손목 스냅 감지 함수 호출(누락주의!!!!!)
-                self._handle_snap_swipe(wrist)
                 curr_time = time.time()
-                
+
                 # 제스처 액션 처리 (쿨다운 적용)
                 if curr_time - self.last_action_time > self.cooldown_sec:
                     if gesture_name in ['one', 'two', 'three', 'four', 'yeah']:
                         num_map = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'yeah': 2}
                         pot_num = num_map[gesture_name]
-                        self.pot_selected_signal.emit(pot_num) 
+                        self.pot_selected_signal.emit(pot_num)
                         self.last_action_time = curr_time
                         print(f"[GESTURE] {pot_num}번 화구 선택 시그널 발송!")
-                    elif gesture_name == 'ok':  
+                    elif gesture_name == 'ok':
                         self.timer_start_signal.emit()
                         self.last_action_time = curr_time
                         print("[GESTURE] 타이머 시작 시그널 발송!")
@@ -137,13 +135,15 @@ class GestureController(QObject):
                         self.last_action_time = curr_time
                         print("[GESTURE] 타이머 초기화 시그널 발송!")
 
-                # 조건문 없이 항상 스냅 검사를 실행합니다.
-                    self._handle_snap_swipe(wrist)
+                # 손가락 끝 스냅 감지 (검지 끝 landmark[8] 기준)
+                self._handle_snap_swipe(hand_landmarks)
 
         return frame, gestures
 
-    def _handle_snap_swipe(self, wrist):
-        curr_x = wrist.x
+    def _handle_snap_swipe(self, hand_landmarks):
+        # 검지(8), 중지(12), 약지(16), 소지(20) 끝의 x 평균으로 스냅 감지
+        fingertips = [hand_landmarks.landmark[i] for i in (8, 12, 16, 20)]
+        curr_x = sum(lm.x for lm in fingertips) / len(fingertips)
         curr_time = time.time()
 
         try:
@@ -156,7 +156,7 @@ class GestureController(QObject):
 
                     if abs(speed_x) > 0.4 and (curr_time - self.last_action_time > self.cooldown_sec):
                         print(f"[SWIPE] Speed: {speed_x:.2f} -> 스냅 감지 성공!")
-                        
+
                         # UI로 축소/Alt+Tab 신호 전달
                         self.swipe_detected.emit()
 
