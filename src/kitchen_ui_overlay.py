@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame
 )
 from src.gesture import GestureController
+from src.gesture.youtube_control import YoutubeController
 
 class kitchen_App(QWidget):
     def __init__(self):
@@ -125,7 +126,7 @@ class kitchen_App(QWidget):
         self.lbl_gesture = QLabel("Gesture: ✋ 없음")
         self.lbl_selected = QLabel("Pot: -")
         self.lbl_smoke = QLabel("Smoke: ✔️ Safe")
-        
+
         for lbl in [self.lbl_gesture, self.lbl_selected, self.lbl_smoke]:
             lbl.setAlignment(Qt.AlignCenter)
             status_layout.addWidget(lbl)
@@ -298,8 +299,7 @@ class kitchen_App(QWidget):
             print(">> [DEBUG] 기본 모드로 복귀 완료 (중앙 정렬)")
             
         # 📌 [트러블슈팅 포인트 10] 초점(Focus) 강제 전환 제어
-        # - 손을 흔들 때 유튜브나 다른 창으로 조작 권한(Alt+Tab)을 넘겨주는 명령어입니다.
-        pyautogui.hotkey('alt', 'tab')
+        pyautogui.hotkey('alt', 'esc')
     # ==========================================
     # 📌 [트러블슈팅 포인트 7] 타이머 제어 핵심 함수들
     # - 제스처 신호를 받아서 실제로 타이머를 돌리고 화면 글씨를 바꾸는 기계 역할입니다.
@@ -317,7 +317,7 @@ class kitchen_App(QWidget):
         if self.selected_pot is None:
             print(">> [알림] 제어할 화구를 먼저 선택해주세요!")
             return
-            
+
         idx = self.selected_pot - 1
         # 시간이 0초이면 기본 5분(300초)을 자동으로 세팅해줍니다.
         if self.pot_times[idx] == 0:
