@@ -1,14 +1,13 @@
 import sys
 import os
 import cv2
-import pyautogui
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QImage, QPixmap, QIcon
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, 
     QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame
 )
-# 제스처 컨트롤러 모듈 (에러 안 나도록 정확하게 유지)
+# 제스처 컨트롤러 모듈
 from src.gesture import GestureController
 
 class kitchen_App(QWidget):
@@ -370,7 +369,7 @@ class kitchen_App(QWidget):
         self.lbl_selected.setText(f"0{num}")
 
     # ==========================================
-    # 🔥 미니모드 전환 
+    # 🔥 미니모드 전환 (포커스 & UI 깨짐 완벽 해결본)
     # ==========================================
     def on_snap_swipe(self):
         screen = self.screen().geometry()
@@ -387,10 +386,10 @@ class kitchen_App(QWidget):
             self.header_frame.hide()
             self.t_header_frame.hide()
 
-            # 🛠️ 최소 크기 박살내기!
+            # 카메라 창 크기 제약 해제 (화면 찢어짐 방지)
             self.image_label.setMinimumSize(0, 0)
             
-            # 🛠️ 레이아웃 여백 강제 0으로 날리기!
+            # 레이아웃 여백 강제 0으로 날리기
             self.main_layout.setContentsMargins(0, 0, 0, 0)
             self.main_layout.setSpacing(0)
             self.content_layout.setContentsMargins(0, 0, 0, 0)
@@ -417,7 +416,7 @@ class kitchen_App(QWidget):
             else:
                 target_height = active_timers * 75
 
-            # 🛠️ 강제 크기 고정!
+            # 강제 크기 고정 (위젯 크기에 맞춤)
             self.setMinimumSize(0, 0)
             self.setFixedSize(280, target_height)
             
@@ -433,10 +432,10 @@ class kitchen_App(QWidget):
             # 기본 모드 복구
             self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
             
-            # 🛠️ 카메라 최소 크기 복구
+            # 카메라 최소 크기 복구
             self.image_label.setMinimumSize(500, 340)
 
-            # 🛠️ 레이아웃 여백 원상 복구
+            # 레이아웃 여백 원상 복구
             self.main_layout.setContentsMargins(15, 15, 15, 15)
             self.main_layout.setSpacing(20)
             self.content_layout.setContentsMargins(0, 0, 0, 0)
@@ -445,7 +444,7 @@ class kitchen_App(QWidget):
             self.timer_layout.setContentsMargins(15, 15, 15, 15)
             self.timer_layout.setSpacing(10)
             
-            # 🛠️ 강제 고정 풀기
+            # 강제 고정 풀기 및 크기 원상 복구
             self.setMinimumSize(1150, 750)
             self.setMaximumSize(16777215, 16777215)
             self.resize(1150, 750)
@@ -471,11 +470,18 @@ class kitchen_App(QWidget):
                     w.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 16px;")
             
             self.show()
-            self.is_mini_mode = False
             
-        pyautogui.hotkey('alt', 'esc')
+            # 🔥 [트러블 슈팅: 원래 화면으로 복귀 시 창이 다른 창 뒤로 숨는 버그 해결]
+            # 원인: 이전 코드에 포함되어 있던 꼼수(pyautogui.hotkey('alt', 'esc'))가 
+            #       활성 창을 강제로 맨 뒤로 보내버리는 윈도우 단축키였기 때문에 발생한 문제.
+            # 해결: 해당 라이브러리와 꼼수 코드를 완전히 삭제하고, PySide6의 정식 GUI 제어 기능인 
+            #       self.raise_() 와 self.activateWindow() 를 사용하여 창을 최상단으로 끌어올리고 포커스를 부여함.
+            self.raise_()
+            self.activateWindow()
+            
+            self.is_mini_mode = False
 
-    # 타이머 로직들
+    # 타이머 제어 로직들
     def select_pot(self, pot_num):
         if 1 <= pot_num <= 4: self.select_burner(pot_num)
 
@@ -485,7 +491,6 @@ class kitchen_App(QWidget):
         if self.pot_times[idx] == 0: self.pot_times[idx] = 300
         self.pot_states[idx] = "실행"
         self.timer_buttons[idx].setIcon(self.get_icon("22_pause.png"))
-        # 🔥 여기서 까만색(#222) 대신 밝은 회색(#EAEAEA)으로 수정 완료!
         self.timer_buttons[idx].setStyleSheet("background-color: #EAEAEA; border-radius: 15px; border: none;")
 
     def pause_selected_timer(self):
@@ -556,19 +561,3 @@ if __name__ == "__main__":
     window = kitchen_App()
     window.show()
     sys.exit(app.exec())
-# <트러블 슈팅 보고서 (미니모드 레이아웃 깨짐 현상)
-# 문제 현상: 미니모드(위젯 모드)로 전환 시, 창 크기가 줄어들지 않고 가로로 길게 찢어지며 UI가 텅 비어 보이는 현상 발생.
-
-# 근본 원인 (Root Cause):
-
-# PySide6(Qt)의 레이아웃 시스템은 자식 위젯들의 MinimumSize(최소 크기)를 기억하고 창 크기가 그 이하로 줄어드는 것을 강제로 막는 특성이 있습니다.
-
-# 기존 풀 화면 모드에 있던 '웹캠 카메라 영역'에 MinimumSize(500, 340)이 설정되어 있었고, 레이아웃 자체의 기본 여백(Margin)이 남아있어 창이 작아지는 것을 거부했습니다.
-
-# 해결 방안 (Solution):
-
-# 크기 제약 해제: 미니모드 진입 시 카메라 위젯의 MinimumSize를 (0, 0)으로 강제 초기화.
-
-# 여백(Margin) 압축: 안 보이는 투명 레이아웃들의 Margin과 Spacing을 모두 0으로 날림.
-
-# 강제 크기 고정: 창 크기를 부탁하듯 줄이는 resize() 대신, 절대 크기가 변하지 못하도록 setFixedSize(280, 높이)로 묶어버려 완벽하게 제어함.
