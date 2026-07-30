@@ -190,10 +190,9 @@ class GestureController(QObject):
 
                         # UI로 축소/Alt+Tab 신호 전달
                         self.swipe_detected.emit()
-
-                            self.last_action_time = curr_time
-                            self.prev_x, self.prev_y, self.prev_time = None, None, None
-                            return
+                        self.last_action_time = curr_time
+                        self.prev_x, self.prev_y, self.prev_time = None, None, None
+                        return
 
         except Exception as e:
             print(f"[GestureController] 스냅 처리 중 오류 발생: {e}")
