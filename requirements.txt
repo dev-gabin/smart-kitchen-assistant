@@ -1,0 +1,17 @@
+# --- Deep Learning & Vision (YOLOv8, PyTorch, OpenCV) ---
+ultralytics>=8.1.0
+torch
+torchvision
+numpy
+opencv-python
+pandas
+python-dateutil
+requests
+
+# --- Data & Configuration ---
+pyyaml
+
+# --- OS Control & Dataset ---
+pyautogui
+roboflow
+mediapipe==0.10.14
