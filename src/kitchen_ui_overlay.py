@@ -951,21 +951,21 @@ class kitchen_App(QWidget):
             self.is_mini_mode = True # 플래그를 미리 켜야 동적 업데이트 메서드가 동작함
             
             if self.first_mini_entry:
-                # 첫 진입: 무조건 4개 다 띄움
+               self.first_mini_entry = False
+            
+            # 어떤 타이머도 작동 안 하고 설정된 시간(초)도 모두 0일 때만 4개 다 표시
+            all_inactive = all(t == 0 and s == "대기" for t, s in zip(self.pot_times, self.pot_states))
+            if all_inactive:
                 active_timers = 4
                 for i in range(4):
                     self.pot_wrappers[i].show()
                     self.pot_wrappers[i].setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
-                self.first_mini_entry = False
-                
                 target_height = (active_timers * 75) + ((active_timers - 1) * 5) + 12
                 self.setMinimumSize(0, 0); self.setMaximumSize(16777215, 16777215)
                 self.setFixedSize(280, target_height) 
                 self.move(screen.width() + screen.x() - self.width() - 20, screen.height() + screen.y() - self.height() - 20)
             else:
-                # 그 이후: 다이나믹 업데이트 호출해서 조건에 맞는 애들만 표시
                 self.update_mini_mode_layout()
-                
             self.show()
             self.toggle_switch.setChecked(True)
         else:
@@ -1065,7 +1065,9 @@ class kitchen_App(QWidget):
                         self.cam_live.setStyleSheet("background-color: #1A1A1A; color: #A69B91; border-radius: 12px; padding: 4px 12px; font-size: 11px; font-weight: bold;")
                 except Exception as e: 
                     print(f"[kitchen_App] 제스처 처리 중 오류 발생: {e}")
-                
+                    import traceback  #에러 추론 위해 추가!!!
+                    traceback.print_exc
+
                 # 연기 감지 (매 5프레임마다 추론)
                 self._smoke_frame_count += 1
                 if self._smoke_frame_count % 5 == 0:
