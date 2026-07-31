@@ -949,7 +949,7 @@ class kitchen_App(QWidget):
             self.timer_frame.setStyleSheet("background-color: #FFFFFF; border: 1.5px solid #EAE0D5; border-radius: 20px;")
             
             self.is_mini_mode = True # 플래그를 미리 켜야 동적 업데이트 메서드가 동작함
-            
+            self.gesture_controller.is_mini_mode=True #미니모드 진입 시 스와이프 제외 손동작 인식 차단!
             if self.first_mini_entry:
                self.first_mini_entry = False
             
@@ -999,7 +999,8 @@ class kitchen_App(QWidget):
                 w.show()
                 w.setStyleSheet("background-color: #FFFDF9; border: 2px solid #8C6D53; border-radius: 16px;" if self.selected_pot == (i + 1) else "background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
             
-            self.show(); self.raise_(); self.activateWindow(); self.is_mini_mode = False
+            self.show(); self.raise_(); self.activateWindow(); self.is_mini_mode = False ##대시보드로 돌아 올때 제스처 조작 락 해제!
+            self.gesture_controller.is_mini_mode=False
             self.toggle_switch.setChecked(False)
 
     def mouseDoubleClickEvent(self, event):
@@ -1052,6 +1053,8 @@ class kitchen_App(QWidget):
                             self.cam_live.setStyleSheet("background-color: #1A1A1A; color: #D9534F; border-radius: 12px; padding: 4px 12px; font-size: 11px; font-weight: bold;")
                         
                         # 스냅 보강 (숫자 제스처 인식 시 해당 화구 포커스 연동)
+                    if gestures and self.gesture_controller.input_mode=='POT_SELECT': #오작동 방지를 위해 화구 선택 모드일때만 작동하도록함
+                        #손이 비어 있는지 아닌지 검사후 넘어감!!!
                         gesture_name = gestures[0]["gesture"]
                         if gesture_name == "one":
                             self.select_burner(1)
