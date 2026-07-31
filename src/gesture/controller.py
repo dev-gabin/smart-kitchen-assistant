@@ -66,12 +66,15 @@ class GestureController(QObject):
         self.input_mode = 'POT_SELECT'
         self.selected_pot_num = None
 
+        ##추가 미니모드 여부 상태값(기본은 대시보드 모드인 False)
+        self.is_mini_mode=False
+
         # MediaPipe Hands 모듈 초기화
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
             max_num_hands=max_num_hands,
-            min_detection_confidence=0.7,
-            min_tracking_confidence=0.7,
+            min_detection_confidence=0.85, #<-기존0.7 (애매한 손 인식 차단)
+            min_tracking_confidence=0.85,#기존0.7(추적 안정성 강화)
         )
         self.mp_drawing = mp.solutions.drawing_utils
 
@@ -105,7 +108,15 @@ class GestureController(QObject):
         v = v / np.linalg.norm(v, axis=1)[:, np.newaxis]
         angle = np.degrees(np.arccos(np.einsum('nt,nt->n', v[_ANGLE_FROM, :], v[_ANGLE_TO, :])))
         data = np.array([angle], dtype=np.float32)
+
         _, knn_results, _, _ = self.knn.findNearest(data, 3)
+        # 🟢 네 번째 값으로 거리(dists)를 받아옴
+        _, knn_results, _, dists = self.knn.findNearest(data, 3)
+        # 🟢 거리가 너무 멀다는 것은 '제스처를 취한 게 아니라 그냥 손을 움직인 것'이므로 오인식으로 차단!
+        # (임계값 6000.0은 테스트해보면서 조절 가능하며, 값이 낮을수록 깐깐하게 판정)
+        if dists is not None and dists[0][0]>6000.0:
+            return '?'
+        
         idx = int(knn_results[0][0])
         return GESTURE_NAMES.get(idx, '?')
 
@@ -125,6 +136,14 @@ class GestureController(QObject):
             results = self.hands.process(rgb_frame)
         except Exception as e:
             return frame, gestures
+
+        # 🟢 [미니모드 완벽 차단] 대시보드로 돌아가는 스와이프만 허용하고, 타이머/화구 조작 등 모든 제스처는 완전 무시!
+        if self.is_mini_mode:
+            if results.multi_hand_landmarks and len(results.multi_hand_landmarks) == 1:
+                self._handle_snap_swipe(results.multi_hand_landmarks[0])
+            return frame, gestures
+
+        
 
         if results.multi_hand_landmarks:
             h, w, _ = frame.shape
@@ -200,7 +219,7 @@ class GestureController(QObject):
                             combo_executed = True
                             self.set_mode_pot_select()
 
-                if not combo_executed:
+                if not self.is_mini_mode and not combo_executed:
                     for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
                         wrist = hand_landmarks.landmark[0]
                         
@@ -213,10 +232,11 @@ class GestureController(QObject):
                                     self.last_seen_gesture = g_name
                                     self.gesture_hold_start = curr_time
                                 
-                                if curr_time - self.gesture_hold_start < 0.18:
+                                if curr_time - self.gesture_hold_start < 1.0: #0.18에서 변경 제스쳐 오인식 방지
                                     break
                             else:
                                 self.last_seen_gesture = None
+                                
                                 break
                             
                             # 1️⃣ 대기 모드: 화구 선택
