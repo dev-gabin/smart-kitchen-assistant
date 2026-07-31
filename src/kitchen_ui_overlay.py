@@ -1,13 +1,19 @@
 import sys
 import os
 import cv2
+import threading
+import winsound
+import pyautogui
+
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QPixmap, QIcon, QPainter, QColor, QBrush, QImage
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QToolButton,
     QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea
 )
-from src.gesture.controller import GestureController
+from src.gesture import GestureController
+from src.gesture.youtube_control import YoutubeController
+from src.smoke import SmokeDetector
 
 class ToggleSwitch(QPushButton):
     """
@@ -45,6 +51,21 @@ class kitchen_App(QWidget):
         
         # 제스처 스와이프 시그널 연결 (위젯 모드 토글 연동)
         self.gesture_controller.swipe_detected.connect(self.on_snap_swipe)
+
+        # 2) SmokeDetector 생성 및 시그널 연결
+        self.smoke_detector = SmokeDetector()
+        self.smoke_detector.smoke_detected.connect(self.on_smoke_detected)
+        self.smoke_detector.smoke_cleared.connect(self.on_smoke_cleared)
+
+        # 경고음 반복 타이머 (2초 간격)
+        self._alarm_timer = QTimer(self)
+        self._alarm_timer.setInterval(2000)
+        self._alarm_timer.timeout.connect(self._play_alarm)
+
+        # 연기 감지는 매 5프레임마다 실행 (성능 최적화)
+        self._smoke_frame_count = 0
+
+
         self.is_mini_mode = False
         self.first_mini_entry = True  # 앱 실행 후 첫 미니모드 진입 여부 체크용 플래그
         self.normal_window_flags = self.windowFlags()  # 대시보드 복구 시 원래 창 플래그 보관용
@@ -409,13 +430,13 @@ class kitchen_App(QWidget):
             QPushButton:hover { background-color: #F8F5F0; }
         """
         
-        self.btn_pause = QPushButton(" 전체 정지"); self.btn_pause.setIcon(self.get_icon("pause.png"))  # 👈 pause.png
+        self.btn_pause = QPushButton(" 전체 정지"); self.btn_pause.setIcon(self.get_icon("pause.png"))
         self.btn_pause.setStyleSheet(btn_base)
         
-        self.btn_reset = QPushButton(" 전체 초기화"); self.btn_reset.setIcon(self.get_icon("reset.png"))  # 👈 reset.png
+        self.btn_reset = QPushButton(" 전체 초기화"); self.btn_reset.setIcon(self.get_icon("reset.png"))
         self.btn_reset.setStyleSheet(btn_base)
         
-        self.btn_alert_off = QPushButton(" 경보 끄기"); self.btn_alert_off.setIcon(self.get_icon("bell.png"))  # 👈 bell.png
+        self.btn_alert_off = QPushButton(" 경보 끄기"); self.btn_alert_off.setIcon(self.get_icon("bell.png"))
         self.btn_alert_off.setStyleSheet("""
             QPushButton {
                 background-color: #FDF2F2; 
@@ -437,16 +458,10 @@ class kitchen_App(QWidget):
             b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             b.setFixedHeight(55)
 
-        self.lbl_fps = QLabel("FPS\n60")
-        self.lbl_fps.setAlignment(Qt.AlignCenter)
-        self.lbl_fps.setFixedSize(55, 55)
-        self.lbl_fps.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px; font-size: 11px; font-weight: bold; color: #888;")
-        
         control_layout.addWidget(self.btn_pause)
         control_layout.addWidget(self.btn_reset)
         control_layout.addWidget(self.btn_alert_off)
         control_layout.addSpacing(5)
-        control_layout.addWidget(self.lbl_fps)
 
         self.content_layout.addWidget(self.control_frame)
         self.main_layout.addWidget(self.content_frame)
@@ -641,7 +656,7 @@ class kitchen_App(QWidget):
             for w in self.pot_wrappers:
                 w.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
                 
-            # 💡 [핵심 추가] 미니모드일 경우 초기화된 화구를 화면에서 즉시 쏙! 지우고 창을 줄임
+            # 미니모드일 경우 초기화된 화구를 화면에서 즉시 쏙! 지우고 창을 줄임
             if self.is_mini_mode:
                 self.update_mini_mode_layout()
 
@@ -993,6 +1008,25 @@ class kitchen_App(QWidget):
             self.on_snap_swipe()
             event.accept()
 
+    # ==========================================
+    # 연기 감지 핸들러
+    # ==========================================
+    def on_smoke_detected(self, conf: float):
+        print(f"[SMOKE] 연기 감지! 신뢰도: {conf:.0%}")
+        self._play_alarm()
+        self._alarm_timer.start()
+
+    def on_smoke_cleared(self):
+        print("[SMOKE] 연기 사라짐 — 경고 해제")
+        self._alarm_timer.stop()
+
+    def _play_alarm(self):
+        """별도 스레드에서 경고음 재생 (UI 블로킹 방지)"""
+        def _beep():
+            for _ in range(3):
+                winsound.Beep(1000, 300)
+        threading.Thread(target=_beep, daemon=True).start()
+
     def start_webcam(self):
         """웹캠 비디오 스트리밍을 시작하는 메서드"""
         if self.cap is None or not self.cap.isOpened(): 
@@ -1016,20 +1050,57 @@ class kitchen_App(QWidget):
                             self.cam_live.setStyleSheet("background-color: #1A1A1A; color: #E2B714; border-radius: 12px; padding: 4px 12px; font-size: 11px; font-weight: bold;")
                         else:
                             self.cam_live.setStyleSheet("background-color: #1A1A1A; color: #D9534F; border-radius: 12px; padding: 4px 12px; font-size: 11px; font-weight: bold;")
+                        
+                        # 스냅 보강 (숫자 제스처 인식 시 해당 화구 포커스 연동)
+                        gesture_name = gestures[0]["gesture"]
+                        if gesture_name == "one":
+                            self.select_burner(1)
+                        elif gesture_name == "two":
+                            self.select_burner(2)
+                        elif gesture_name == "three":
+                            self.select_burner(3)
+                        elif gesture_name == "four":
+                            self.select_burner(4)
                     else:
                         self.cam_live.setStyleSheet("background-color: #1A1A1A; color: #A69B91; border-radius: 12px; padding: 4px 12px; font-size: 11px; font-weight: bold;")
-                except Exception: 
-                    pass
+                except Exception as e: 
+                    print(f"[kitchen_App] 제스처 처리 중 오류 발생: {e}")
                 
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                h, w, ch = rgb.shape
-                self.image_label.setPixmap(QPixmap.fromImage(QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888)).scaled(self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                # 연기 감지 (매 5프레임마다 추론)
+                self._smoke_frame_count += 1
+                if self._smoke_frame_count % 5 == 0:
+                    frame, is_smoke, conf = self.smoke_detector.process(frame)
+                    if is_smoke:
+                        self.lbl_smoke.setText(f"Smoke: ⚠️ DETECTED ({conf:.0%})")
+                        self.lbl_smoke.setStyleSheet(
+                            "color: #FFFFFF; background-color: #CC0000; "
+                            "font-weight: bold; padding: 4px; border-radius: 4px;"
+                        )
+                    else:
+                        self.lbl_smoke.setText("Smoke: ✔️ Safe")
+                        self.lbl_smoke.setStyleSheet("")
+
+                # 렌더링 처리
+                rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                h, w, ch = rgb_image.shape
+                bytes_per_line = ch * w
+                qt_image = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+
+                pixmap = QPixmap.fromImage(qt_image)
+                scaled_pixmap = pixmap.scaled(
+                    self.image_label.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                self.image_label.setPixmap(scaled_pixmap)
 
     def closeEvent(self, event):
         """애플리케이션 종료 시 웹캠 자원 및 타이머를 안전하게 해제하는 메서드"""
         if hasattr(self, 'timer'): 
             self.timer.stop()
-        if self.cap and self.cap.isOpened(): 
+        if hasattr(self, '_alarm_timer'):
+            self._alarm_timer.stop()
+        if hasattr(self, 'cap') and self.cap and self.cap.isOpened():
             self.cap.release()
         event.accept()
 
