@@ -318,5 +318,5 @@ class GestureController(QObject):
                 self.swipe_detected.emit()
                 self.last_swipe_time = curr_time
                 self._swipe_history.clear()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[GestureController] 스냅 처리 중 오류: {e}")
