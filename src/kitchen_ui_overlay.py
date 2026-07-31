@@ -482,7 +482,7 @@ class kitchen_App(QWidget):
         wrapper.setFixedHeight(75)
         layout = QHBoxLayout(wrapper)
         
-        # 💡 [핵심 최적화 1] 카드 내부 좌우 여백을 줄여서 미니창(280px) 안에서도 시간이 잘리지 않게 확보!
+        # 카드 내부 좌우 여백을 줄여서 미니창(280px) 안에서도 시간이 잘리지 않게 확보!
         layout.setContentsMargins(10, 0, 10, 0)
         
         lbl_num = QLabel(num)
@@ -497,7 +497,7 @@ class kitchen_App(QWidget):
         lbl_name = QLabel(name)
         lbl_name.setStyleSheet("font-size: 13px; color: #786C61; font-weight: bold; border: none;")
         
-        # 💡 [핵심 최적화 2] 시간 레이블이 오른쪽 끝에 찰싹 붙도록 너비를 살짝 줄이고 우측 정렬
+        # 시간 레이블이 오른쪽 끝에 찰싹 붙도록 너비를 살짝 줄이고 우측 정렬
         time_lbl.setStyleSheet("font-size: 18px; font-weight: 900; color: #3E3832; border: none;")
         time_lbl.setMinimumWidth(55)
         time_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -510,7 +510,7 @@ class kitchen_App(QWidget):
         
         self.timer_buttons.append(btn_play)
         
-        # 💡 [핵심 최적화 3] 요소들 사이의 간격을 쫀쫀하게 줄여서 280px 창에 쏙 들어가게 세팅!
+        # 요소들 사이의 간격을 쫀쫀하게 줄여서 280px 창에 쏙 들어가게 세팅!
         layout.addWidget(lbl_num)
         layout.addSpacing(5)
         layout.addWidget(lbl_icon)
@@ -581,7 +581,7 @@ class kitchen_App(QWidget):
         
         self.lbl_selected.setText(f"0{num} [시간 설정 중]")
         
-        # 💡 [핵심 추가] 미니모드 중에 숨겨져 있던 화구를 제스처로 선택하면 즉시 뿅! 나타나게 갱신
+        # 미니모드 중에 숨겨져 있던 화구를 제스처로 선택하면 즉시 뿅! 나타나게 갱신
         if self.is_mini_mode:
             self.update_mini_mode_layout()
 
@@ -604,7 +604,12 @@ class kitchen_App(QWidget):
             self.lbl_selected.setText(f"0{self.selected_pot} [세팅 완료 / 조작 가능]")
 
     def pause_selected_timer(self):
-        """선택된 화구의 타이머를 일시정지 또는 재개하는 메서드"""
+        """
+        💡 [수정] ✋ (보) 제스처:
+        선택된 개별 화구의 타이머를 재생/정지하는 기능!
+        - 실행 중이면 -> 일시 정지
+        - 정지 또는 대기 중(시간 세팅됨)이면 -> 개별 시작
+        """
         if self.selected_pot is not None:
             idx = self.selected_pot - 1
             if self.pot_states[idx] == "실행":
@@ -612,11 +617,13 @@ class kitchen_App(QWidget):
                 self.timer_buttons[idx].setIcon(self.get_icon("21_play.png"))
                 self.timer_buttons[idx].setStyleSheet("background-color: #D5BDAF; border-radius: 16px; border: none;")
                 self.lbl_selected.setText(f"0{self.selected_pot} [일시 정지됨]")
-            elif self.pot_states[idx] == "정지" and self.pot_times[idx] > 0:
+            
+            # 기존에는 "정지" 상태만 다시 켰지만, 이제 "대기"(방금 세팅함) 상태도 개별 시작 가능!
+            elif self.pot_states[idx] in ["정지", "대기"] and self.pot_times[idx] > 0:
                 self.pot_states[idx] = "실행"
                 self.timer_buttons[idx].setIcon(self.get_icon("22_pause.png"))
                 self.timer_buttons[idx].setStyleSheet("background-color: #EAE0D5; border-radius: 16px; border: none;")
-                self.lbl_selected.setText(f"0{self.selected_pot} [재시작 됨]")
+                self.lbl_selected.setText(f"0{self.selected_pot} [개별 시작됨]")
 
     def reset_selected_timer(self):
         """선택된 화구의 타이머를 초기화하는 메서드"""
@@ -628,39 +635,42 @@ class kitchen_App(QWidget):
             self.timer_buttons[idx].setIcon(self.get_icon("21_play.png"))
             self.timer_buttons[idx].setStyleSheet("background-color: #D5BDAF; border-radius: 16px; border: none;")
             
-            # 💡 [핵심 추가] 초기화 시 해당 화구 포커스 해제 (미니모드에서 즉시 숨기기 위함)
+            # 초기화 시 해당 화구 포커스 해제 (미니모드에서 즉시 숨기기 위함)
             self.selected_pot = None
             self.lbl_selected.setText("-")
             for w in self.pot_wrappers:
                 w.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
                 
-            # 미니모드일 경우 초기화된 화구를 화면에서 쏙! 빼버림
+            # 💡 [핵심 추가] 미니모드일 경우 초기화된 화구를 화면에서 즉시 쏙! 지우고 창을 줄임
             if self.is_mini_mode:
                 self.update_mini_mode_layout()
 
     def smart_start_timers(self):
-        """스마트 제스처로 타이머를 일괄 시작 또는 정지하는 메서드"""
+        """
+        💡 [수정] 👍 (엄지 척) 제스처 (스마트 마스터 제어):
+        1. 세팅 후 대기/정지 중인 화구가 하나라도 있으면 -> 기존 실행 중인 건 건드리지 않고, 대기 중인 놈들만 쿨하게 추가 시작!
+        2. 전부 다 신나게 실행 중이면 -> 그때서야 전체 일시 정지 쾅!
+        """
         ready_indices = [i for i in range(4) if self.pot_times[i] > 0 and self.pot_states[i] in ["대기", "정지"]]
         running_indices = [i for i in range(4) if self.pot_states[i] == "실행"]
         
-        if running_indices:
-            for i in running_indices:
-                self.pot_states[i] = "정지"
-                self.timer_buttons[i].setIcon(self.get_icon("21_play.png"))
-                self.timer_buttons[i].setStyleSheet("background-color: #D5BDAF; border-radius: 16px; border: none;")
-        elif len(ready_indices) == 1:
-            idx = ready_indices[0]
-            self.pot_states[idx] = "실행"
-            self.timer_buttons[idx].setIcon(self.get_icon("22_pause.png"))
-            self.timer_buttons[idx].setStyleSheet("background-color: #EAE0D5; border-radius: 16px; border: none;")
-        elif len(ready_indices) > 1:
+        # 1. 방금 세팅해서 대기/정지 중인 게 있다면 무조건 그것들을 우선 시작!
+        if ready_indices:
             for idx in ready_indices:
                 self.pot_states[idx] = "실행"
                 self.timer_buttons[idx].setIcon(self.get_icon("22_pause.png"))
                 self.timer_buttons[idx].setStyleSheet("background-color: #EAE0D5; border-radius: 16px; border: none;")
+            if self.selected_pot:
+                self.lbl_selected.setText(f"0{self.selected_pot} [스마트 시작됨]")
         
-        if self.selected_pot:
-            self.lbl_selected.setText(f"0{self.selected_pot} [스마트 제어됨]")
+        # 2. 대기/정지 중인 건 하나도 없고, 전부 실행 중일 때만 -> 전체 멈춤!
+        elif running_indices:
+            for i in running_indices:
+                self.pot_states[i] = "정지"
+                self.timer_buttons[i].setIcon(self.get_icon("21_play.png"))
+                self.timer_buttons[i].setStyleSheet("background-color: #D5BDAF; border-radius: 16px; border: none;")
+            if self.selected_pot:
+                self.lbl_selected.setText("전체 일시 정지됨")
 
     def pause_all_timers(self):
         """모든 화구의 타이머를 일괄 정지 또는 재개하는 메서드"""
@@ -858,8 +868,8 @@ class kitchen_App(QWidget):
 
     def update_mini_mode_layout(self):
         """
-        💡 [핵심 추가] 미니모드 창에서 화구들의 표시 여부와 창 높이를 동적으로 실시간 갱신하는 헬퍼 메서드
-        (초기화, 포커스 변경 등 이벤트 발생 시 미니모드 창이 스스로 늘어났다 줄어들게 만듦)
+        미니모드 창에서 초기화나 포커스 변경 등 이벤트 발생 시 
+        표시되는 화구 목록과 창 크기를 동적으로 바로바로 갱신해주는 메서드!
         """
         if not self.is_mini_mode:
             return
@@ -876,20 +886,21 @@ class kitchen_App(QWidget):
                     self.pot_wrappers[i].setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
                 active_timers += 1
             else: 
-                self.pot_wrappers[i].hide() # 👈 조건에 안 맞는 애들은 가차없이 스르륵 숨김!
+                # 💡 조건에 안 맞으면(초기화돼서 00:00이고 포커스도 풀렸으면) 가차없이 스르륵 숨김!
+                self.pot_wrappers[i].hide() 
         
-        # 전부 싹 다 지워져서 텅 비는 걸 방지하기 위해 기본 화구 1개 띄워둠
+        # 만약 초기화하다가 전부 싹 다 지워져서 텅 비면 흉하니까 기본 화구 1개 띄워둠
         if active_timers == 0:
             self.pot_wrappers[0].show()
             self.pot_wrappers[0].setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
             active_timers = 1
         
-        # 표시되는 타이머 개수에 맞춰 미니모드 창 높이 동적 계산
+        # 표시되는 타이머 개수에 맞춰 미니모드 창 높이 동적 줄임/늘림
         target_height = (active_timers * 75) + ((active_timers - 1) * 5) + 12
         self.setMinimumSize(0, 0)
         self.setMaximumSize(16777215, 16777215)
         
-        # 컴팩트하고 예쁜 280px 너비로 절대 안 깨지게 고정
+        # 컴팩트하고 예쁜 280px 너비로 고정
         self.setFixedSize(280, target_height)
         
         # 창 크기가 변하더라도 무조건 우측 하단 구석 자리를 사수하도록 위치 재보정
@@ -925,6 +936,7 @@ class kitchen_App(QWidget):
             self.is_mini_mode = True # 플래그를 미리 켜야 동적 업데이트 메서드가 동작함
             
             if self.first_mini_entry:
+                # 첫 진입: 무조건 4개 다 띄움
                 active_timers = 4
                 for i in range(4):
                     self.pot_wrappers[i].show()
@@ -936,6 +948,7 @@ class kitchen_App(QWidget):
                 self.setFixedSize(280, target_height) 
                 self.move(screen.width() + screen.x() - self.width() - 20, screen.height() + screen.y() - self.height() - 20)
             else:
+                # 그 이후: 다이나믹 업데이트 호출해서 조건에 맞는 애들만 표시
                 self.update_mini_mode_layout()
                 
             self.show()
