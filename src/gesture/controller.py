@@ -135,30 +135,13 @@ class GestureController(QObject):
                 try:
                     gesture_name = self._classify_gesture(hand_landmarks)
                     
-                    # 3D 뼈대 좌표 추출
-                    joint = np.zeros((21, 3))
-                    for j, lm in enumerate(hand_landmarks.landmark):
-                        joint[j] = [lm.x, lm.y, lm.z]
                     
-                    # 손목(0) ~ 중지 관절(9) 거리로 손의 크기(Scale) 측정
-                    hand_size = np.linalg.norm(joint[0] - joint[9])
-                    
-                    tips = [8, 12, 16, 20]
-                    pips = [6, 10, 14, 18]
-                    
-                    # 네 손가락이 모두 접혀있는지 확인 ('1번' 제스처 오인식 방지 보호막)
-                    is_all_curled = all(joint[tip][1] > joint[pip][1] for tip, pip in zip(tips, pips))
-                    
-                    if is_all_curled and hand_size > 0:
-                        # 손 크기 대비 엄지 끝(4)과 검지 관절(5) 사이의 3D 상대 거리 비율 (손 각도 변화에 무관하게 안정적 판정)
-                        thumb_index_dist = np.linalg.norm(joint[4] - joint[5]) / hand_size
-                        
-                        if thumb_index_dist > 0.42:
-                            gesture_name = 'thumbsup'  # 엄지 척
-                        else:
-                            gesture_name = 'fist'      # 주먹
                 except Exception:
+                    print(f"[GestureController] 제스처 분류 중 오류: {e}")
+                    import traceback
+                    traceback.print_exc()
                     gesture_name = '?'
+                    
 
                 wrist = hand_landmarks.landmark[0]
                 position = (int(wrist.x * w), int(wrist.y * h))
