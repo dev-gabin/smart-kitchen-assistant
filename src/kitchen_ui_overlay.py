@@ -896,8 +896,8 @@ class kitchen_App(QWidget):
             # 일반 대시보드 모드로 돌아올 때 창 크기 고정 해제 및 원복
             self.setMinimumSize(1150, 750); self.setMaximumSize(16777215, 16777215); self.resize(1150, 750)
             self.move(screen.x() + (screen.width() - 1150) // 2, screen.y() + (screen.height() - 750) // 2)
-            
-            self.sidebar.show(); self.cam_frame.show(); self.status_frame.show(); self.control_frame.show(); self.header_frame.show(); self.t_header_frame.show()
+            #sidebar 없는데 불러오려 해서오류나서 지움
+            self.cam_frame.show(); self.status_frame.show(); self.control_frame.show(); self.header_frame.show(); self.t_header_frame.show()
             self.timer_frame.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 20px;")
             
             for i, w in enumerate(self.pot_wrappers):
