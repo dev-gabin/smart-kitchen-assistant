@@ -18,9 +18,9 @@ def train():
 
     model.train(
         data=str(DATA_YAML),
-        epochs=10,
+        epochs=50,
         imgsz=640,
-        batch=50,
+        batch=16,
         # fraction=0.52,
         project=str(RUNS_DIR),
         name=RUN_NAME,
