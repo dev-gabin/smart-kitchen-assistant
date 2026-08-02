@@ -6,7 +6,7 @@ class SmokeDetector(QObject):
     smoke_detected = Signal(float)  # 연기 감지 시작 시 confidence 전달
     smoke_cleared = Signal()        # 연기가 사라졌을 때
 
-    def __init__(self, model_path: str = 'models/custom_smoke_best.pt',
+    def __init__(self, model_path: str = 'models/custom_smoke_best_v3.pt',
                  conf_threshold: float = 0.4):
         super().__init__()
         self.conf_threshold = conf_threshold
