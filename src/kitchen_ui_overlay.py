@@ -44,7 +44,9 @@ class ToggleSwitch(QPushButton):
 class kitchen_App(QWidget):
     def __init__(self):
         super().__init__()
-        
+
+        self.video_source=0 #모드 설정
+        # self.video_source="data/smoke5.mp4"
         # 웹캠 및 제스처 컨트롤러 초기화
         self.cap = None
         self.gesture_controller = GestureController()
@@ -64,6 +66,7 @@ class kitchen_App(QWidget):
 
         # 연기 감지는 매 5프레임마다 실행 (성능 최적화)
         self._smoke_frame_count = 0
+        self.somoke_dialog=None #팝업창 변수
 
 
         self.is_mini_mode = False
@@ -101,114 +104,6 @@ class kitchen_App(QWidget):
         self.main_layout.setContentsMargins(15, 15, 15, 15)
         self.main_layout.setSpacing(20)
 
-        # ----------------------------------------------------
-        # [좌측] 슬림하고 컴팩트한 세로 네비게이션 바 영역
-        # ----------------------------------------------------
-        self.sidebar = QFrame()
-        self.sidebar.setFixedWidth(90)
-        self.sidebar.setStyleSheet("background: transparent; border: none;")
-        
-        sidebar_layout = QVBoxLayout(self.sidebar)
-        sidebar_layout.setContentsMargins(0, 0, 0, 0)
-        sidebar_layout.setSpacing(8)
-        
-        # 상단 셰프 로고 (chef.png 적용)
-        logo_label = QLabel()
-        logo_pixmap = QPixmap("img/chef.png")
-        if not logo_pixmap.isNull():
-            logo_label.setPixmap(logo_pixmap.scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        logo_label.setAlignment(Qt.AlignCenter)
-        logo_label.setStyleSheet("border: none; background: transparent;")
-        sidebar_layout.addWidget(logo_label)
-        sidebar_layout.addSpacing(8)
-
-        # 사이드바 버튼 상태별 스타일 (비활성 투명, 활성 크림 배경 + 얇은 테두리)
-        self.btn_normal_style = """
-            QToolButton { 
-                background: transparent; 
-                border: none; 
-                font-size: 11px; 
-                color: #786C61; 
-                font-weight: bold; 
-                border-radius: 14px; 
-            }
-            QToolButton:hover { background-color: #F2ECE4; }
-        """
-        self.btn_active_style = """
-            QToolButton { 
-                background-color: #FFFDF9; 
-                border: 1px solid #E5D8CC; 
-                border-radius: 14px; 
-                font-size: 11px; 
-                color: #3E3832; 
-                font-weight: bold; 
-            }
-        """
-        
-        # 네비게이션 메뉴 버튼 생성
-        self.btn_home = QToolButton(); self.btn_home.setText("대시보드"); self.btn_home.setIcon(self.get_icon("02_home.png"))
-        self.btn_timer = QToolButton(); self.btn_timer.setText("타이머"); self.btn_timer.setIcon(self.get_icon("03_clock_1.png"))
-        self.btn_gesture = QToolButton(); self.btn_gesture.setText("제스처"); self.btn_gesture.setIcon(self.get_icon("06_hand_gesture.png"))
-        self.btn_env = QToolButton(); self.btn_env.setText("환경 상태"); self.btn_env.setIcon(self.get_icon("07_leaf.png"))
-        self.btn_setting = QToolButton(); self.btn_setting.setText("설정"); self.btn_setting.setIcon(self.get_icon("08_settings.png"))
-
-        self.sidebar_buttons = [self.btn_home, self.btn_timer, self.btn_gesture, self.btn_env, self.btn_setting]
-        
-        for i, btn in enumerate(self.sidebar_buttons):
-            btn.setIconSize(QSize(32, 32))
-            btn.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-            btn.setFixedHeight(70)
-            btn.setFixedWidth(82)
-            btn.setStyleSheet(self.btn_active_style if i == 0 else self.btn_normal_style)
-            sidebar_layout.addWidget(btn)
-        
-        self.current_sidebar_index = 0
-
-        # 메뉴 버튼 클릭 이벤트 연결
-        self.btn_home.clicked.connect(lambda: self.set_sidebar_focus(0))
-        self.btn_timer.clicked.connect(lambda: self.set_sidebar_focus(1))
-        self.btn_gesture.clicked.connect(lambda: self.set_sidebar_focus(2))
-        self.btn_env.clicked.connect(lambda: self.set_sidebar_focus(3))
-        self.btn_setting.clicked.connect(lambda: self.set_sidebar_focus(4))
-        
-        sidebar_layout.addSpacing(15)
-
-        # 사이드바 하단 Widget 모드 전환 컨트롤
-        self.widget_container = QFrame()
-        self.widget_container.setStyleSheet("background: transparent; border: none;")
-        widget_layout = QVBoxLayout(self.widget_container)
-        widget_layout.setContentsMargins(0, 0, 0, 0)
-        widget_layout.setSpacing(6)
-        widget_layout.setAlignment(Qt.AlignCenter)
-
-        self.btn_widget = QToolButton()
-        self.btn_widget.setText("Widget 모드")
-        self.btn_widget.setIcon(self.get_icon("widget.png"))  # 👈 widget.png 적용
-        self.btn_widget.setIconSize(QSize(30, 30))
-        self.btn_widget.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-        self.btn_widget.setStyleSheet("""
-            QToolButton { background: transparent; border: none; font-size: 10px; color: #594A42; font-weight: bold; }
-            QToolButton:hover { color: #3E3832; }
-        """)
-        self.btn_widget.clicked.connect(self.on_snap_swipe)
-
-        # 커스텀 토글 스위치 배치
-        self.toggle_switch = ToggleSwitch()
-        self.toggle_switch.clicked.connect(self.on_snap_swipe)
-
-        toggle_layout = QHBoxLayout()
-        toggle_layout.setContentsMargins(0, 0, 0, 0)
-        toggle_layout.addStretch()
-        toggle_layout.addWidget(self.toggle_switch)
-        toggle_layout.addStretch()
-
-        widget_layout.addWidget(self.btn_widget)
-        widget_layout.addLayout(toggle_layout)
-        
-        sidebar_layout.addWidget(self.widget_container)
-        sidebar_layout.addStretch()
-
-        self.main_layout.addWidget(self.sidebar)
 
         # ----------------------------------------------------
         # [우측] 메인 콘텐츠 대시보드 영역
@@ -262,7 +157,24 @@ class kitchen_App(QWidget):
         
         header_layout.addLayout(title_box)
         header_layout.addStretch()
+
+        ##위젯 모드 버튼 이식
+        widget_layout = QHBoxLayout()
+        widget_layout.setSpacing(10)
         
+        self.btn_widget = QPushButton(" 위젯 모드")
+        self.btn_widget.setIcon(self.get_icon("widget.png"))
+        self.btn_widget.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 12px; font-weight: bold; color: #594A42; padding: 8px 12px;")
+        self.btn_widget.clicked.connect(self.on_snap_swipe)
+
+        self.toggle_switch = ToggleSwitch()
+        self.toggle_switch.clicked.connect(self.on_snap_swipe)
+        
+        widget_layout.addWidget(self.btn_widget)
+        widget_layout.addWidget(self.toggle_switch)
+        header_layout.addLayout(widget_layout)
+        header_layout.addSpacing(15)
+
         for icon_file in ["08_settings.png", "24_brightness.png", "23_fullscreen.png"]:
             btn = QPushButton()
             btn.setIcon(self.get_icon(icon_file))
@@ -729,16 +641,10 @@ class kitchen_App(QWidget):
             self.update_mini_mode_layout()
 
     def set_sidebar_focus(self, idx: int):
-        """사이드바 메뉴 포커스 변경 및 제스처 가이드 팝업 토글 메서드"""
-        for i, btn in enumerate(self.sidebar_buttons):
-            if i == idx:
-                btn.setStyleSheet(self.btn_active_style)
-            else:
-                btn.setStyleSheet(self.btn_normal_style)
-
+        """사이드바는 제거되었지만, 제스처(idx==2) 가이드 팝업 기능은 유지"""
         self.current_sidebar_index = idx
 
-        # 3번 메뉴(제스처) 클릭 시 조작 매뉴얼 팝업 토글
+        # 3번 메뉴(제스처) 조작 매뉴얼 팝업 토글
         if idx == 2:
             if hasattr(self, 'guide_window') and self.guide_window.isVisible():
                 self.guide_window.close()
@@ -746,7 +652,6 @@ class kitchen_App(QWidget):
             else:
                 self.show_gesture_guide()
                 self.toggle_switch.setChecked(True)
-
     def show_gesture_guide(self):
         """제스처 조작 매뉴얼 팝업 창 생성 (스크롤 지원)"""
         if hasattr(self, 'guide_window') and self.guide_window.isVisible():
@@ -935,12 +840,12 @@ class kitchen_App(QWidget):
         if not self.is_mini_mode:
             # [미니모드 진입] 프레임리스 창 및 최상단 고정 설정
             self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-
-            self.sidebar.hide(); self.cam_frame.hide(); self.status_frame.hide(); self.control_frame.hide(); self.header_frame.hide(); self.t_header_frame.hide()
+            self.cam_frame.hide(); self.status_frame.hide(); self.control_frame.hide(); self.header_frame.hide(); self.t_header_frame.hide()
             self.image_label.setMinimumSize(0, 0)
             self.main_layout.setContentsMargins(0, 0, 0, 0); self.main_layout.setSpacing(0)
             self.content_layout.setContentsMargins(0, 0, 0, 0); self.content_layout.setSpacing(0)
             self.middle_layout.setContentsMargins(0, 0, 0, 0); self.middle_layout.setSpacing(0)
+            
             
             # 타이머 컨테이너가 좁은 창 안에서도 여백을 덜 차지하게 싹 줄임
             self.timer_layout.setContentsMargins(5, 5, 5, 5)
@@ -991,8 +896,8 @@ class kitchen_App(QWidget):
             # 일반 대시보드 모드로 돌아올 때 창 크기 고정 해제 및 원복
             self.setMinimumSize(1150, 750); self.setMaximumSize(16777215, 16777215); self.resize(1150, 750)
             self.move(screen.x() + (screen.width() - 1150) // 2, screen.y() + (screen.height() - 750) // 2)
-            
-            self.sidebar.show(); self.cam_frame.show(); self.status_frame.show(); self.control_frame.show(); self.header_frame.show(); self.t_header_frame.show()
+            #sidebar 없는데 불러오려 해서오류나서 지움
+            self.cam_frame.show(); self.status_frame.show(); self.control_frame.show(); self.header_frame.show(); self.t_header_frame.show()
             self.timer_frame.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 20px;")
             
             for i, w in enumerate(self.pot_wrappers):
@@ -1017,9 +922,48 @@ class kitchen_App(QWidget):
         self._play_alarm()
         self._alarm_timer.start()
 
+        #화재 알림 팝업창#
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout
+        if not self.smoke_dialog or not self.smoke_dialog.isVisible():
+        
+            self.smoke_dialog = QDialog(self)
+            self.smoke_dialog.setWindowTitle("화재 주의 경고")
+            self.smoke_dialog.setFixedSize(520, 260)
+            self.smoke_dialog.setStyleSheet("background-color: #FDF9F3; border-radius: 16px;")
+            
+            dialog_layout = QVBoxLayout(self.smoke_dialog)
+            dialog_layout.setContentsMargins(25, 25, 25, 25)
+            
+            lbl_warn = QLabel("⚠️\n\n연기가 감지되었습니다!\n화재 위험이 감지되었습니다. 환기를 권장합니다.")
+            lbl_warn.setAlignment(Qt.AlignCenter)
+            lbl_warn.setStyleSheet("font-size: 15px; font-weight: bold; color: #B23B3B; border: none;")
+            dialog_layout.addWidget(lbl_warn)
+            
+            btn_layout = QHBoxLayout()
+            
+            btn_alarm_off = QPushButton("경보 끄기")
+            btn_alarm_off.setIcon(self.get_icon("bell.png"))
+            btn_alarm_off.setFixedHeight(45)
+            btn_alarm_off.setStyleSheet("background-color: #FFFFFF; border: 1px solid #F5CDCD; color: #B23B3B; font-weight: bold; border-radius: 12px;")
+            btn_alarm_off.clicked.connect(lambda: [self._alarm_timer.stop(), self.btn_alert_off.setText(" 경보 꺼짐")])
+            
+            btn_confirm = QPushButton("확인")
+            btn_confirm.setFixedHeight(45)
+            btn_confirm.setStyleSheet("background-color: #3E3832; color: white; font-weight: bold; border-radius: 12px;")
+            btn_confirm.clicked.connect(self.smoke_dialog.close)
+            
+            btn_layout.addWidget(btn_alarm_off)
+            btn_layout.addWidget(btn_confirm)
+            dialog_layout.addLayout(btn_layout)
+            
+            self.smoke_dialog.exec()
+
     def on_smoke_cleared(self):
         print("[SMOKE] 연기 사라짐 — 경고 해제")
         self._alarm_timer.stop()
+        # 🟢 연기가 사라지면 팝업도 자동으로 닫기
+        if self.smoke_dialog and self.smoke_dialog.isVisible():
+            self.smoke_dialog.close()
 
     def _play_alarm(self):
         """별도 스레드에서 경고음 재생 (UI 블로킹 방지)"""
@@ -1031,7 +975,9 @@ class kitchen_App(QWidget):
     def start_webcam(self):
         """웹캠 비디오 스트리밍을 시작하는 메서드"""
         if self.cap is None or not self.cap.isOpened(): 
-            self.cap = cv2.VideoCapture(0)
+            #변수 값을 가져와서 비디오 열기!!!
+            self.cap = cv2.VideoCapture(self.video_source)
+            print(f"[kitchen_App] 비디오 소스 열기 성공: {self.video_source}")
         if not self.timer.isActive(): 
             self.timer.start(30)
 
@@ -1081,9 +1027,13 @@ class kitchen_App(QWidget):
                             "color: #FFFFFF; background-color: #CC0000; "
                             "font-weight: bold; padding: 4px; border-radius: 4px;"
                         )
+                        # 🟢 연기가 감지되었을 때 경고음과 팝업 창을 띄우는 함수 호출!
+                        self.on_smoke_detected(conf)
                     else:
                         self.lbl_smoke.setText("Smoke: ✔️ Safe")
                         self.lbl_smoke.setStyleSheet("")
+                        # 🟢 연기가 사라졌을 때 팝업 창과 알람을 해제하는 함수 호출!
+                        self.on_smoke_cleared()
 
                 # 렌더링 처리
                 rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
