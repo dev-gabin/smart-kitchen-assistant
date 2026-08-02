@@ -75,6 +75,7 @@ class GestureController(QObject):
         # 스냅 스와이프(위젯 모드) 감지용 변수
         self.last_swipe_time = 0
         self._swipe_history: list = []
+        self._swipe_window_sec = 0.25  # 실제 스냅 동작 시간에 맞춘 짧은 샘플 보관 시간 (너무 길면 정지 구간까지 섞여 속도가 희석됨)
 
         # 초기 작동 모드: 화구 선택 대기 상태
         self.input_mode = 'POT_SELECT'
@@ -317,11 +318,11 @@ class GestureController(QObject):
         curr_y = sum(lm.y for lm in fingertips) / len(fingertips)
         curr_time = time.time()
         self._swipe_history.append((curr_time, curr_x, curr_y))
-        self._swipe_history = [(t, x, y) for t, x, y in self._swipe_history if curr_time - t <= 0.4]
+        self._swipe_history = [(t, x, y) for t, x, y in self._swipe_history if curr_time - t <= self._swipe_window_sec]
 
         try:
             if curr_time - self.last_swipe_time <= self.cooldown_sec: return
-            if len(self._swipe_history) < 3: return
+            if len(self._swipe_history) < 2: return
             oldest_time, oldest_x, oldest_y = self._swipe_history[0]
             dt = curr_time - oldest_time
             if dt <= 0: return
@@ -330,8 +331,21 @@ class GestureController(QObject):
             speed_x = disp_x / dt
             speed_y = disp_y / dt
 
-            if (abs(speed_x) > 0.8 and abs(disp_x) > 0.15 and abs(disp_y) < 0.15 and abs(speed_x) > abs(speed_y) * 2.5):
+            # 실측 [SNAP-DEBUG] 로그 기준으로 재조정
+            is_snap = (
+                abs(speed_x) > 0.28
+                and abs(disp_x) > 0.06
+                and abs(disp_y) < 0.15
+                and abs(speed_x) > abs(speed_y) * 1.8
+            )
+
+            # 🔍 임계값에 근접했는데 통과 못 한 경우 콘솔에 실측치를 남겨서 실제 손동작에 맞게 재조정할 수 있게 함
+            if not is_snap and abs(speed_x) > 0.2:
+                print(f"[SNAP-DEBUG] speed_x={speed_x:.2f} disp_x={disp_x:.2f} disp_y={disp_y:.2f} speed_y={speed_y:.2f} dt={dt:.2f} samples={len(self._swipe_history)}")
+                # TODO:: 확인 후 제거할 것
+            if is_snap:
                 self.swipe_detected.emit()
+                pyautogui.hotkey('alt', 'esc')  # 손을 옆으로 휙 스냅하면 Alt+Esc 실행
                 self.last_swipe_time = curr_time
                 self._swipe_history.clear()
         except Exception as e:
