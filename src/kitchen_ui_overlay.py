@@ -8,11 +8,10 @@ import pyautogui
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QPixmap, QIcon, QPainter, QColor, QBrush, QImage
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QToolButton,
+    QApplication, QWidget, QLabel, QPushButton, QToolButton, QDialog,
     QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea
 )
 from src.gesture import GestureController
-from src.gesture.youtube_control import YoutubeController
 from src.smoke import SmokeDetector
 
 class ToggleSwitch(QPushButton):
@@ -41,10 +40,11 @@ class ToggleSwitch(QPushButton):
         handle_x = 28 if self.isChecked() else 3
         painter.drawEllipse(handle_x, 3, 22, 22)
 
-class kitchen_App(QWidget):
+class KitchenApp(QWidget):
     def __init__(self):
         super().__init__()
 
+        self.smoke_dialog = QDialog(self)
         self.video_source=0 #모드 설정
         # self.video_source="data/smoke5.mp4"
         # 웹캠 및 제스처 컨트롤러 초기화
@@ -918,15 +918,14 @@ class kitchen_App(QWidget):
     # 연기 감지 핸들러
     # ==========================================
     def on_smoke_detected(self, conf: float):
-        print(f"[SMOKE] 연기 감지! 신뢰도: {conf:.0%}")
+        # print(f"[SMOKE] 연기 감지! 신뢰도: {conf:.0%}")
         self._play_alarm()
         self._alarm_timer.start()
 
         #화재 알림 팝업창#
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout
+
         if not self.smoke_dialog or not self.smoke_dialog.isVisible():
-        
-            self.smoke_dialog = QDialog(self)
+
             self.smoke_dialog.setWindowTitle("화재 주의 경고")
             self.smoke_dialog.setFixedSize(520, 260)
             self.smoke_dialog.setStyleSheet("background-color: #FDF9F3; border-radius: 16px;")
@@ -959,7 +958,7 @@ class kitchen_App(QWidget):
             self.smoke_dialog.exec()
 
     def on_smoke_cleared(self):
-        print("[SMOKE] 연기 사라짐 — 경고 해제")
+        # print("[SMOKE] 연기 사라짐 — 경고 해제")
         self._alarm_timer.stop()
         # 🟢 연기가 사라지면 팝업도 자동으로 닫기
         if self.smoke_dialog and self.smoke_dialog.isVisible():
@@ -977,7 +976,7 @@ class kitchen_App(QWidget):
         if self.cap is None or not self.cap.isOpened(): 
             #변수 값을 가져와서 비디오 열기!!!
             self.cap = cv2.VideoCapture(self.video_source)
-            print(f"[kitchen_App] 비디오 소스 열기 성공: {self.video_source}")
+            print(f"[KitchenApp] 비디오 소스 열기 성공: {self.video_source}")
         if not self.timer.isActive(): 
             self.timer.start(30)
 
@@ -1013,7 +1012,7 @@ class kitchen_App(QWidget):
                     else:
                         self.cam_live.setStyleSheet("background-color: #1A1A1A; color: #A69B91; border-radius: 12px; padding: 4px 12px; font-size: 11px; font-weight: bold;")
                 except Exception as e: 
-                    print(f"[kitchen_App] 제스처 처리 중 오류 발생: {e}")
+                    print(f"[KitchenApp] 제스처 처리 중 오류 발생: {e}")
                     import traceback  #에러 추론 위해 추가!!!
                     traceback.print_exc
 
@@ -1061,6 +1060,6 @@ class kitchen_App(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = kitchen_App()
+    window = KitchenApp()
     window.show()
     sys.exit(app.exec())

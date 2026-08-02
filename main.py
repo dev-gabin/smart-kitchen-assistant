@@ -10,7 +10,7 @@ os.environ["QT_LOGGING_RULES"] = "qt.qpa.window.warning=false"
 
 try:
     from PySide6.QtWidgets import QApplication
-    from src.kitchen_ui_overlay import kitchen_App
+    from src.kitchen_ui_overlay import KitchenApp
 except Exception as e:
     print(f"❌ 파일 불러오기(Import) 중 에러 발생: {e}")
     sys.exit(1)
@@ -23,7 +23,7 @@ def main():
         
     try:
         print(">> 🚀 메인 앱을 실행합니다...")
-        window = kitchen_App()
+        window = KitchenApp()
         window.show()
         print(">> ✨ UI 창이 정상적으로 열렸습니다!")
         sys.exit(app.exec())
