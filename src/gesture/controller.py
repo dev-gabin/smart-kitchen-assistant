@@ -12,7 +12,7 @@ pyautogui.FAILSAFE = False
 # 제스처 ID와 이름 매핑 딕셔너리
 GESTURE_NAMES = {
     0: 'fist', 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five',
-    6: 'six', 7: 'rock', 8: 'spiderman', 9: 'two', 10: 'ok', 11: 'thumbsup',
+    6: 'ok', 7: 'rock', 8: 'spiderman', 9: 'two', 10: 'ok', 11: 'thumbsup',
 }
 
 # MediaPipe 랜드마크 연결 및 각도 계산용 인덱스 정의
@@ -317,7 +317,7 @@ class GestureController(QObject):
             speed_y = disp_y / dt
 
             if (abs(speed_x) > 0.8 and abs(disp_x) > 0.15 and abs(disp_y) < 0.15 and abs(speed_x) > abs(speed_y) * 2.5):
-                if disp_x < 0 and curr_x < 0.5: return
+                # if disp_x < 0 and curr_x < 0.3: return
                 self.swipe_detected.emit()
                 self.last_swipe_time = curr_time
                 self._swipe_history.clear()
