@@ -19,8 +19,8 @@ class KitchenApp(QWidget):
         super().__init__()
 
         self.smoke_dialog = QDialog(self)
-        self.video_source=0 #모드 설정
-        # self.video_source="data/smoke5.mp4"
+        # self.video_source=0 #모드 설정
+        self.video_source="data/n_smoke_3.mp4"
         # 웹캠 및 제스처 컨트롤러 초기화
         self.cap = None
         self.gesture_controller = GestureController()
