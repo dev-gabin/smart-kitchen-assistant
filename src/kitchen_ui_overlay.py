@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea
 )
 from src.gesture import GestureController
-from src.burner import SmokeDetector, draw_smoke_boxes, detect_pans, PanTracker, draw_pans
+from src.burner import SmokeDetector, draw_smoke_boxes
 
 class KitchenApp(QWidget):
     def __init__(self):
@@ -20,7 +20,7 @@ class KitchenApp(QWidget):
 
         self.smoke_dialog = QDialog(self)
         # self.video_source=0 #모드 설정
-        self.video_source="data/pots.mp4"
+        self.video_source="data/pots_3.mp4"
         # 웹캠 및 제스처 컨트롤러 초기화
         self.cap = None
         self.gesture_controller = GestureController()
@@ -42,13 +42,6 @@ class KitchenApp(QWidget):
         self._smoke_frame_count = 0
         self._smoke_box_cache = []
         self.somoke_dialog=None #팝업창 변수
-
-        # 화구 위 팬 감지 캐시 (5프레임마다 한 번만 다시 탐지하고, 그 사이엔 캐시된 결과를 그림)
-        self._pan_tracker = PanTracker()
-        self._pan_cache = []
-        self._pan_detect_interval = 5
-        self._pan_frame_count = 0
-
 
         self.is_mini_mode = False
         self.first_mini_entry = True  # 앱 실행 후 첫 미니모드 진입 여부 체크용 플래그
@@ -841,17 +834,6 @@ class KitchenApp(QWidget):
                     print(f"[KitchenApp] 제스처 처리 중 오류 발생: {e}")
                     import traceback  #에러 추론 위해 추가!!!
                     traceback.print_exc
-
-                # 화구 위 프라이팬/조리도구 가장자리 감지 및 붉은색 표시
-                # (5프레임마다만 다시 탐지 + 최근 감지 이력으로 확인된 것만 그려서 오탐 억제)
-                try:
-                    self._pan_frame_count += 1
-                    if self._pan_frame_count % self._pan_detect_interval == 0:
-                        raw_pans = detect_pans(frame)
-                        self._pan_cache = self._pan_tracker.update(raw_pans)
-                    frame = draw_pans(frame, self._pan_cache)
-                except Exception as e:
-                    print(f"[KitchenApp] 화구/팬 감지 중 오류 발생: {e}")
 
                 self._smoke_frame_count += 1
                 if self.smoke_detector is not None and self._smoke_frame_count % 5 == 0:

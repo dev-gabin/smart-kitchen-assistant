@@ -15,60 +15,114 @@ def _to_detect_scale(frame):
     return small, scale
 
 
-def detect_pans(frame, min_radius_ratio=0.03, max_radius_ratio=0.35):
+def _circle_contour(cx, cy, r, n=60):
+    angles = np.linspace(0, 2 * np.pi, n)
+    pts = np.array([[cx + r * np.cos(a), cy + r * np.sin(a)] for a in angles], dtype=np.float32)
+    return pts.reshape((-1, 1, 2))
+
+
+def _boundary_texture_std(gray, cx, cy, r):
+    """
+    원 경계 바로 안쪽 얇은 고리 영역의 밝기 표준편차.
+    실제 냄비/팬은 손잡이·테두리 반사·그림자 때문에 경계 부근 밝기 편차가 크지만,
+    인덕션 위에 인쇄된 화구 표시 같은 납작한 원형 무늬는 편차가 거의 없어서
+    이 값으로 "입체감 있는 실제 물체"와 "평면 무늬"를 구분할 수 있음.
+    """
+    h, w = gray.shape[:2]
+    outer = min(int(r) + 3, min(h, w) // 2 - 1)
+    inner = max(int(r) - 3, 1)
+    if outer <= inner:
+        return 0.0
+    mask = np.zeros((h, w), np.uint8)
+    cv2.circle(mask, (int(cx), int(cy)), outer, 255, -1)
+    cv2.circle(mask, (int(cx), int(cy)), inner, 0, -1)
+    vals = gray[mask == 255]
+    return float(vals.std()) if vals.size else 0.0
+
+
+def detect_pans(frame, min_radius_ratio=0.16, max_radius_ratio=0.34, texture_std_thresh=15.0):
     """
     탑다운 뷰에서 프라이팬/냄비 등 원형 조리도구의 가장자리를 프레임 전체에서 직접 탐지.
 
-    기존에는 화구의 원형 테두리를 먼저 찾고 그 안에서만 팬을 찾았는데, 팬이 화구를
-    완전히 덮으면(특히 검은 팬 + 검은 배경) 화구 테두리 자체가 안 보여서 아예 탐지가
-    안 되는 구조적 문제가 있었음. 이제는 화구를 거치지 않고 CLAHE로 국소 명암 대비를
-    끌어올린 뒤 팬 윤곽선을 바로 찾음.
+    이전 버전은 Canny + findContours만으로 원형 윤곽선을 찾았는데, 반사가 심한 금속
+    냄비/뚜껑은 표면 반사 때문에 테두리가 여러 조각으로 끊기고 손잡이가 둘레 모양을
+    망가뜨려서(원형도가 낮아짐) 큰 냄비류가 거의 탐지되지 않는 문제가 있었음.
+    HoughCircles는 원 둘레의 일부만 남아 있어도 투표 방식으로 원을 찾아내기 때문에
+    이런 반사/손잡이에 훨씬 강건해서 1차 탐지 방식으로 사용.
+
+    다만 HoughCircles는 인덕션에 인쇄된 화구 표시 같은 "평면에 그려진 원"도 똑같이
+    원으로 잡아내므로, 경계 부근의 밝기 편차(_boundary_texture_std)로 입체감 있는
+    실제 물체만 남기는 필터를 추가로 적용함.
 
     Returns: [{'center': (x, y), 'radius': r, 'contour': ndarray}, ...] (좌표는 원본 프레임 기준)
     """
     small, scale = _to_detect_scale(frame)
     sh, sw = small.shape[:2]
+    min_dim = min(sh, sw)
 
     gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
 
     # 검은 팬 위 검은 배경처럼 명암 차가 거의 없는 경계도 살리기 위한 국소 대비 강화
     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
-    blurred = cv2.GaussianBlur(enhanced, (5, 5), 0)
+    blurred = cv2.GaussianBlur(enhanced, (7, 7), 1.5)
 
-    edges = cv2.Canny(blurred, 30, 90)
-    edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
-
-    contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-
-    frame_area = sh * sw
-    min_area = frame_area * (min_radius_ratio ** 2) * np.pi
-    max_area = frame_area * (max_radius_ratio ** 2) * np.pi
+    min_r = max(int(min_dim * min_radius_ratio), 10)
+    max_r = int(min_dim * max_radius_ratio)
 
     pans = []
+    seen = []  # (cx, cy, r) — 중복 후보 제거용
+
+    circles = cv2.HoughCircles(
+        blurred, cv2.HOUGH_GRADIENT, dp=1.5, minDist=int(min_dim * 0.35),
+        param1=70, param2=45, minRadius=min_r, maxRadius=max_r
+    )
+    if circles is not None:
+        for cx, cy, r in circles[0, :]:
+            if _boundary_texture_std(gray, cx, cy, r) < texture_std_thresh:
+                continue  # 평면 무늬(인쇄된 화구 표시 등)로 판단해서 제외
+            pans.append({
+                'center': (int(cx / scale), int(cy / scale)),
+                'radius': int(r / scale),
+                'contour': (_circle_contour(cx, cy, r) / scale).astype(np.int32),
+            })
+            seen.append((cx, cy, r))
+
+    # HoughCircles가 놓칠 수 있는 팬을 보완하기 위한 컨투어 기반 보조 탐지
+    edges = cv2.Canny(blurred, 30, 90)
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8), iterations=2)
+    contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+
+    min_area = np.pi * (min_r ** 2)
+    max_area = np.pi * (max_r ** 2)
+
     for cnt in contours:
         area = cv2.contourArea(cnt)
         if area < min_area or area > max_area:
             continue
 
-        perimeter = cv2.arcLength(cnt, True)
-        if perimeter == 0:
+        (cx, cy), r = cv2.minEnclosingCircle(cnt)
+        if r <= 0:
             continue
 
-        circularity = 4 * np.pi * area / (perimeter ** 2)
-        if circularity < 0.65:  # 원형에 가까운 조리도구만 통과, 각지거나 불규칙한 윤곽은 배제
+        # 손잡이 같은 작은 돌출부에 흔들리지 않도록, 둘레 기반 원형도 대신
+        # "외접원 대비 실제 면적 비율(roundness)"로 원형 여부를 판단
+        roundness = area / (np.pi * r ** 2)
+        if roundness < 0.55:
             continue
 
-        _, _, bw, bh = cv2.boundingRect(cnt)
-        if bh == 0 or not (0.7 <= bw / bh <= 1.4):  # 가로세로 비율로 원형 여부 재검증 (오탐 억제)
+        if any(((cx - sx) ** 2 + (cy - sy) ** 2) ** 0.5 < max(r, sr) * 0.5 for sx, sy, sr in seen):
+            continue  # 이미 Hough로 잡은 것과 같은 물체
+
+        if _boundary_texture_std(gray, cx, cy, r) < texture_std_thresh:
             continue
 
-        (cx, cy), radius = cv2.minEnclosingCircle(cnt)
         pans.append({
             'center': (int(cx / scale), int(cy / scale)),
-            'radius': int(radius / scale),
+            'radius': int(r / scale),
             'contour': (cnt / scale).astype(np.int32),
         })
+        seen.append((cx, cy, r))
 
     return pans
 
