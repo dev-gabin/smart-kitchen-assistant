@@ -572,15 +572,18 @@ class KitchenApp(QWidget):
         self.refresh_pot_label(idx)
         self.lbl_selected.setText(f"0{self.selected_pot} [{self.pot_times[idx]//60}분 {self.pot_times[idx]%60}초 설정됨]")
 
-    def start_selected_timer_if_ready(self):
+    def start_selected_timer_if_ready(self, num=None):
         """시간 설정 후 손이 화면에서 사라졌을 때, 선택된 화구가 대기/정지 중이고 시간이 설정돼 있으면 자동으로 시작시키는 메서드"""
-        if self.selected_pot is not None:
-            idx = self.selected_pot - 1
+        # gesture_controller의 timer_auto_start_signal은 인자 없이 emit되므로 num은 항상 None으로 들어옴.
+        # 신호가 도착하는 시점엔 아직 self.selected_pot이 초기화 전이라 그대로 사용 가능.
+        pot_num = num if num is not None else self.selected_pot
+        if pot_num is not None:
+            idx = pot_num - 1
             if self.pot_states[idx] in ["대기", "정지"] and self.pot_times[idx] > 0:
                 self.pot_states[idx] = "실행"
                 self.timer_buttons[idx].setIcon(self.get_icon("22_pause.png"))
                 self.timer_buttons[idx].setStyleSheet("background-color: #EAE0D5; border-radius: 16px; border: none;")
-                self.lbl_selected.setText(f"0{self.selected_pot} [자동 시작됨]")
+                self.lbl_selected.setText(f"0{pot_num} [자동 시작됨]")
 
     def confirm_pot_setting(self):
         """화구 시간 세팅을 확정하는 메서드"""
