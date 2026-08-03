@@ -1,5 +1,6 @@
 import sys
 import os
+import ctypes
 import cv2
 import threading
 import winsound
@@ -9,45 +10,18 @@ from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QPixmap, QIcon, QPainter, QColor, QBrush, QImage
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QToolButton, QDialog,
-    QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea,
-    
+    QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea
 )
 from src.gesture import GestureController, VoiceAssistant
 from src.burner import SmokeDetector, draw_smoke_boxes
-
-class ToggleSwitch(QPushButton):
-    """
-    [커스텀 토글 스위치]
-    - 시안과 동일하게 회색/브라운 트랙 배경과 하얀색 동그라미 손잡이가 
-      부드럽게 움직이는 미니멀 토글 스위치 컴포넌트입니다.
-    """
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedSize(54, 28)
-        self.setCheckable(True)
-        
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        # 트랙 배경 색상 지정 (활성화 시 브라운, 비활성화 시 회색)
-        track_color = QColor("#8C6D53") if self.isChecked() else QColor("#D6CEC7")
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(track_color))
-        painter.drawRoundedRect(0, 0, self.width(), self.height(), 14, 14)
-        
-        # 내부 하얀색 원형 손잡이 위치 계산 및 드로잉
-        painter.setBrush(QBrush(QColor("#FFFFFF")))
-        handle_x = 28 if self.isChecked() else 3
-        painter.drawEllipse(handle_x, 3, 22, 22)
 
 class KitchenApp(QWidget):
     def __init__(self):
         super().__init__()
 
         self.smoke_dialog = None
-        # self.video_source=0 #모드 설정
-        self.video_source="data/pan_fire_3.mp4"
+        self.video_source=0 #모드 설정
+        # self.video_source="data/pan_fire_3.mp4"
         # 웹캠 및 제스처 컨트롤러 초기화
         self.cap = None
         self.gesture_controller = GestureController()
@@ -193,11 +167,8 @@ class KitchenApp(QWidget):
         self.btn_widget.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 12px; font-weight: bold; color: #594A42; padding: 8px 12px;")
         self.btn_widget.clicked.connect(self.on_snap_swipe)
 
-        self.toggle_switch = ToggleSwitch()
-        self.toggle_switch.clicked.connect(self.on_snap_swipe)
         
         widget_layout.addWidget(self.btn_widget)
-        widget_layout.addWidget(self.toggle_switch)
         header_layout.addLayout(widget_layout)
         header_layout.addSpacing(15)
 
@@ -232,18 +203,6 @@ class KitchenApp(QWidget):
         cam_title = QLabel(" 카메라 뷰")
         cam_title.setStyleSheet("font-size: 15px; font-weight: 800; border: none;")
         
-        # 실시간 LIVE 상태 인디케이터 (제스처 감지 여부에 따라 노랑/빨강 동적 반영)
-        self.cam_live = QLabel("● LIVE")
-        self.cam_live.setStyleSheet("""
-            background-color: #1A1A1A; 
-            color: #E2B714; 
-            border-radius: 12px; 
-            padding: 4px 12px; 
-            font-size: 11px; 
-            font-weight: bold;
-        """)
-        self.cam_live.setAlignment(Qt.AlignCenter)
-        
         cam_header_left = QHBoxLayout()
         cam_header_left.setSpacing(5)
         cam_header_left.addWidget(cam_icon_lbl)
@@ -251,7 +210,6 @@ class KitchenApp(QWidget):
         
         cam_header.addLayout(cam_header_left)
         cam_header.addStretch()
-        cam_header.addWidget(self.cam_live)
         
         self.image_label = QLabel("웹캠 연결 중...")
         self.image_label.setAlignment(Qt.AlignCenter)
@@ -318,7 +276,7 @@ class KitchenApp(QWidget):
             ("04", self.lbl_pot4)
         ]:
            w, b_play, status_lbl = self.create_timer_item(
-               num, "burn2.png", time_lbl
+               num, "burn2.png", "", time_lbl
 )
 
            self.timer_layout.addWidget(w)
@@ -357,6 +315,7 @@ class KitchenApp(QWidget):
 
         # 최하단 전체 컨트롤 버튼 (pause.png, reset.png, bell.png 적용)
         self.control_frame = QFrame()
+        self.control_frame.setStyleSheet("background-color: transparent; border: none;")
         self.control_frame.setFixedHeight(65)
         control_layout = QHBoxLayout(self.control_frame)
         control_layout.setContentsMargins(0, 0, 0, 0)
@@ -427,18 +386,19 @@ class KitchenApp(QWidget):
 
         # 컨트롤러 제스처 및 기능 시그널 바인딩
         self.gesture_controller.pot_selected_signal.connect(self.select_burner)
+        self.gesture_controller.pot_deselected_signal.connect(self.deselect_burner)
         self.gesture_controller.timer_pause_signal.connect(self.pause_selected_timer)
         self.gesture_controller.timer_reset_signal.connect(self.reset_selected_timer)
         self.gesture_controller.timer_pause_all_signal.connect(self.pause_all_timers)
         self.gesture_controller.timer_resume_all_signal.connect(self.resume_all_timers)
         self.gesture_controller.timer_reset_all_signal.connect(self.reset_all_timers)
-        self.gesture_controller.sidebar_focus_signal.connect(self.set_sidebar_focus)
         self.gesture_controller.timer_toggle_long_mode_signal.connect(self.toggle_long_time_mode)
         self.gesture_controller.timer_add_time_signal.connect(self.add_time_to_selected_pot)
+        self.gesture_controller.timer_adjust_seconds_signal.connect(self.adjust_selected_pot_seconds)
+        self.gesture_controller.timer_auto_start_signal.connect(self.start_selected_timer_if_ready)
         self.gesture_controller.timer_confirm_signal.connect(self.confirm_pot_setting)
-        self.gesture_controller.timer_smart_start_signal.connect(self.smart_start_timers)
 
-    def create_timer_item(self, num, icon_file, time_lbl):
+    def create_timer_item(self, num, icon_file, name, time_lbl):
         """개별 타이머 카드 위젯 생성 헬퍼 함수"""
         wrapper = QFrame()
         wrapper.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
@@ -456,7 +416,8 @@ class KitchenApp(QWidget):
         pixmap = QPixmap(os.path.join("img", icon_file))
         if not pixmap.isNull():
             lbl_icon.setPixmap(pixmap.scaled(50, 50, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            
+        lbl_name = QLabel(name)
+        lbl_name.setStyleSheet("font-size: 13px; color: #786C61; font-weight: bold; border: none;")
         lbl_status= QLabel("대기")
         lbl_status.setFixedWidth(72)
         lbl_status.setStyleSheet(
@@ -580,6 +541,14 @@ class KitchenApp(QWidget):
         if self.is_mini_mode:
             self.update_mini_mode_layout()
 
+    def deselect_burner(self):
+        """화면에 화구 선택 제스처(1~4)가 없어서 선택이 풀렸을 때, 대시보드의 선택 표시를 초기화하는 메서드"""
+        self.selected_pot = None
+        self.lbl_selected.setText("-")
+        if not self.is_mini_mode:
+            for w in self.pot_wrappers:
+                w.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
+
     def add_time_to_selected_pot(self, base_mins: int):
         """선택된 화구에 타이머 시간을 추가하는 메서드"""
         if self.selected_pot is None:
@@ -592,7 +561,26 @@ class KitchenApp(QWidget):
         self.pot_times[idx] += add_mins * 60  
         self.refresh_pot_label(idx)
         self.lbl_selected.setText(f"0{self.selected_pot} [{self.pot_times[idx]//60}분 설정됨]")
-        self.refresh_pot_status(idx) #현재 선택한 화구 번호를  Index 순서로 바꾼 값
+
+    def adjust_selected_pot_seconds(self, seconds: int):
+        """선택된 화구의 타이머를 초 단위로 증감하는 메서드 (제스처 5=+10초 유지, 주먹=-10초 유지)"""
+        if self.selected_pot is None:
+            return
+
+        idx = self.selected_pot - 1
+        self.pot_times[idx] = max(0, self.pot_times[idx] + seconds)
+        self.refresh_pot_label(idx)
+        self.lbl_selected.setText(f"0{self.selected_pot} [{self.pot_times[idx]//60}분 {self.pot_times[idx]%60}초 설정됨]")
+
+    def start_selected_timer_if_ready(self):
+        """시간 설정 후 손이 화면에서 사라졌을 때, 선택된 화구가 대기/정지 중이고 시간이 설정돼 있으면 자동으로 시작시키는 메서드"""
+        if self.selected_pot is not None:
+            idx = self.selected_pot - 1
+            if self.pot_states[idx] in ["대기", "정지"] and self.pot_times[idx] > 0:
+                self.pot_states[idx] = "실행"
+                self.timer_buttons[idx].setIcon(self.get_icon("22_pause.png"))
+                self.timer_buttons[idx].setStyleSheet("background-color: #EAE0D5; border-radius: 16px; border: none;")
+                self.lbl_selected.setText(f"0{self.selected_pot} [자동 시작됨]")
 
     def confirm_pot_setting(self):
         """화구 시간 세팅을 확정하는 메서드"""
@@ -702,136 +690,6 @@ class KitchenApp(QWidget):
         if self.is_mini_mode:
             self.update_mini_mode_layout()
 
-    def set_sidebar_focus(self, idx: int):
-        """사이드바는 제거되었지만, 제스처(idx==2) 가이드 팝업 기능은 유지"""
-        self.current_sidebar_index = idx
-
-        # 3번 메뉴(제스처) 조작 매뉴얼 팝업 토글
-        if idx == 2:
-            if hasattr(self, 'guide_window') and self.guide_window.isVisible():
-                self.guide_window.close()
-                self.toggle_switch.setChecked(False)
-            else:
-                self.show_gesture_guide()
-                self.toggle_switch.setChecked(True)
-    def show_gesture_guide(self):
-        """제스처 조작 매뉴얼 팝업 창 생성 (스크롤 지원)"""
-        if hasattr(self, 'guide_window') and self.guide_window.isVisible():
-            self.guide_window.raise_()
-            self.guide_window.activateWindow()
-            return
-
-        self.guide_window = QWidget()
-        self.guide_window.setWindowTitle("제스처 조작 매뉴얼")
-        self.guide_window.setFixedSize(600, 750) 
-        self.guide_window.setStyleSheet("background-color: #FDF9F3;")
-        
-        main_layout = QVBoxLayout(self.guide_window)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
-        
-        scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 15, 0)
-        
-        guide_label = QLabel()
-        guide_label.setTextFormat(Qt.RichText)
-        guide_label.setWordWrap(True)
-        
-        gesture_guide_text = """
-        <div style="font-family: 'Malgun Gothic', sans-serif; color: #3E3832; font-size: 13px;">
-            <h3 style="color: #8C6D53;">👨‍🍳 1. 기본 요리 시나리오 (Step-by-Step)</h3>
-            <table style="width: 100%; border-collapse: collapse; text-align: left;">
-                <tr style="background-color: #F5EBE6; border-bottom: 2px solid #E3D5CA;">
-                    <th style="padding: 10px;">순서</th><th style="padding: 10px;">기능</th><th style="padding: 10px;">제스처</th><th style="padding: 10px;">설명</th>
-                </tr>
-                <tr style="border-bottom: 1px solid #EAE0D5;">
-                    <td style="padding: 10px; font-weight: bold;">STEP 1</td><td style="padding: 10px; font-weight: bold;">화구 선택</td>
-                    <td style="padding: 10px;">☝✌🤟 (1,2,3,4)</td><td style="padding: 10px;">원하는 화구를 가리켜 포커스 지정</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #EAE0D5;">
-                    <td style="padding: 10px; font-weight: bold;">STEP 2</td><td style="padding: 10px; font-weight: bold;">시간 추가</td>
-                    <td style="padding: 10px;">☝🤟🖐 (1,3,5분)</td><td style="padding: 10px;">선택된 화구에 +1분, +3분, +5분 누적</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #EAE0D5;">
-                    <td style="padding: 10px; font-style: italic; color: #786C61;">옵션</td><td style="padding: 10px; font-style: italic; color: #786C61;">단위 변경</td>
-                    <td style="padding: 10px;">🤘 (ROCK)</td><td style="padding: 10px;">기본 모드(분) ↔ 장시간 모드(x10 단위)</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #EAE0D5;">
-                    <td style="padding: 10px; font-weight: bold;">STEP 3</td><td style="padding: 10px; font-weight: bold;">세팅 확정</td>
-                    <td style="padding: 10px;">👌 (OK)</td><td style="padding: 10px;">시간을 저장하고 다른 화구 조작 대기</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #EAE0D5;">
-                    <td style="padding: 10px; font-weight: bold;">STEP 4</td><td style="padding: 10px; font-weight: bold;">요리 시작</td>
-                    <td style="padding: 10px; color: #8C6D53; font-weight: bold;">👍 (엄지 척)</td><td style="padding: 10px; font-weight: bold;">세팅 완료된 모든 화구 일괄 시작!</td>
-                </tr>
-            </table>
-            
-            <br><br>
-            
-            <h3 style="color: #8C6D53;">🎯 2. 개별 제어 (포커스된 화구 대상)</h3>
-            <table style="width: 100%; border-collapse: collapse; text-align: left;">
-                <tr style="background-color: #F5EBE6; border-bottom: 2px solid #E3D5CA;">
-                    <th style="padding: 10px;">기능</th><th style="padding: 10px;">제스처</th><th style="padding: 10px;">설명 (작동 조건)</th>
-                </tr>
-                <tr style="border-bottom: 1px solid #EAE0D5;">
-                    <td style="padding: 10px; font-weight: bold;">재생/일시정지</td><td style="padding: 10px;">✋ (보)</td><td style="padding: 10px;"><b>선택된 화구만</b> 조작 (0.8초 유지)</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #EAE0D5;">
-                    <td style="padding: 10px; font-weight: bold;">타이머 초기화</td><td style="padding: 10px;">✊ (주먹)</td><td style="padding: 10px;"><b>선택된 화구</b> 리셋 (0.5초 유지)</td>
-                </tr>
-            </table>
-
-            <br><br>
-
-            <h3 style="color: #8C6D53;">👑 3. 마스터 스위치 (전체 제어)</h3>
-            <table style="width: 100%; border-collapse: collapse; text-align: left;">
-                <tr style="background-color: #F5EBE6; border-bottom: 2px solid #E3D5CA;">
-                    <th style="padding: 10px;">기능</th><th style="padding: 10px;">제스처</th><th style="padding: 10px;">설명 (작동 조건)</th>
-                </tr>
-                <tr style="border-bottom: 1px solid #EAE0D5;">
-                    <td style="padding: 10px; font-weight: bold;">스마트 일괄 제어</td><td style="padding: 10px;">👍 (엄지 척)</td><td style="padding: 10px;">[요리중] 전체 정지 / [대기중] 전체 시작</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #EAE0D5;">
-                    <td style="padding: 10px; font-weight: bold; color: #B23B3B;">긴급 전체 정지</td><td style="padding: 10px;">🙌 (양손 보)</td><td style="padding: 10px;">작동 중인 모든 화구 즉시 정지</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #EAE0D5;">
-                    <td style="padding: 10px; font-weight: bold; color: #B23B3B;">긴급 전체 초기화</td><td style="padding: 10px;">🤜🤛 (양손 주먹)</td><td style="padding: 10px;">모든 화구 타이머 및 상태 리셋</td>
-                </tr>
-            </table>
-
-            <br><br>
-
-            <h3 style="color: #8C6D53;">✨ 4. 특수 기능</h3>
-            <table style="width: 100%; border-collapse: collapse; text-align: left;">
-                <tr style="background-color: #F5EBE6; border-bottom: 2px solid #E3D5CA;">
-                    <th style="padding: 10px;">기능</th><th style="padding: 10px;">제스처</th><th style="padding: 10px;">설명 (작동 조건)</th>
-                </tr>
-                <tr style="border-bottom: 1px solid #EAE0D5;">
-                    <td style="padding: 10px; font-weight: bold;">위젯 모드 전환</td><td style="padding: 10px;">👋 (스와이프)</td><td style="padding: 10px;">손을 화면 밖으로 밀어내면 미니화면 전환</td>
-                </tr>
-            </table>
-        </div>
-        """
-        guide_label.setText(gesture_guide_text)
-        guide_label.setAlignment(Qt.AlignTop)
-        
-        scroll_layout.addWidget(guide_label)
-        scroll.setWidget(scroll_content)
-        main_layout.addWidget(scroll)
-        
-        btn_close = QPushButton("확인했습니다")
-        btn_close.setFixedHeight(50)
-        btn_close.setStyleSheet("background-color: #8C6D53; color: white; font-weight: bold; font-size: 15px; border-radius: 12px; margin-top: 10px;")
-        btn_close.clicked.connect(self.guide_window.close)
-        main_layout.addWidget(btn_close)
-        
-        self.guide_window.destroyed.connect(lambda: self.toggle_switch.setChecked(False))
-        self.guide_window.show()
-
     def update_countdowns(self):
         """1초마다 실행되며 작동 중인 타이머의 남은 시간을 깎아주는 카운트다운 메서드"""
         for i in range(4):
@@ -892,18 +750,20 @@ class KitchenApp(QWidget):
         self.move(screen.width() + screen.x() - self.width() - 20, screen.height() + screen.y() - self.height() - 20)
 
     def _force_to_front(self):
-        """
-        다른 창(브라우저 등)이 OS 포그라운드를 쥐고 있으면 raise_()/activateWindow()가
-        내부적으로 쓰는 SetForegroundWindow가 Windows에 의해 막혀서 조용히 실패함.
-        WindowStaysOnTopHint를 잠깐 켰다 끄면 SetWindowPos(HWND_TOPMOST)가 호출되는데,
-        이건 포그라운드 권한 없이도 항상 허용되므로 이 방법으로 강제로 맨 위로 끌어올림.
-        """
-        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         self.show()
+        if sys.platform == "win32":
+            try:
+                hwnd = int(self.winId())
+                HWND_TOPMOST, HWND_NOTOPMOST = -1, -2
+                SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW = 0x0002, 0x0001, 0x0040
+                flags = SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                user32 = ctypes.windll.user32
+                user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
+                user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+            except Exception as e:
+                print(f"[KitchenApp] 창을 강제로 앞으로 가져오는 데 실패: {e}")
         self.raise_()
         self.activateWindow()
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
-        self.show()
 
     def on_snap_swipe(self):
         """전체 대시보드 화면 ↔ 우측 하단 고정 미니 위젯 모드 간의 전환을 수행하는 메서드"""
@@ -986,7 +846,6 @@ class KitchenApp(QWidget):
             self._force_to_front()
             self.is_mini_mode = False ##대시보드로 돌아 올때 제스처 조작 락 해제!
             self.gesture_controller.is_mini_mode=False
-            self.toggle_switch.setChecked(False)
 
     def mouseDoubleClickEvent(self, event):
         """미니모드 창을 더블클릭했을 때 대시보드로 즉시 복구해주는 이벤트 핸들러"""
@@ -1025,55 +884,39 @@ class KitchenApp(QWidget):
             self._play_alarm()
             self._alarm_timer.start()
 
-        # 팝업은 필요할 때마다 새로 생성하여 레이아웃 중복 오류 방지
+        #화재 알림 팝업창#
+
         if not self.smoke_dialog or not self.smoke_dialog.isVisible():
-            self.smoke_dialog = QDialog(self)
+
             self.smoke_dialog.setWindowTitle("화재 주의 경고")
             self.smoke_dialog.setFixedSize(520, 260)
-            self.smoke_dialog.setStyleSheet(
-                "background-color: #FDF9F3; border-radius: 16px;"
-            )
-
+            self.smoke_dialog.setStyleSheet("background-color: #FDF9F3; border-radius: 16px;")
+            
             dialog_layout = QVBoxLayout(self.smoke_dialog)
             dialog_layout.setContentsMargins(25, 25, 25, 25)
-
-            lbl_warn = QLabel(
-                "⚠️\n\n연기가 감지되었습니다!\n"
-                "화재 위험이 감지되었습니다. 환기를 권장합니다."
-            )
+            
+            lbl_warn = QLabel("⚠️\n\n연기가 감지되었습니다!\n화재 위험이 감지되었습니다. 환기를 권장합니다.")
             lbl_warn.setAlignment(Qt.AlignCenter)
-            lbl_warn.setStyleSheet(
-                "font-size: 15px; font-weight: bold; "
-                "color: #B23B3B; border: none;"
-            )
+            lbl_warn.setStyleSheet("font-size: 15px; font-weight: bold; color: #B23B3B; border: none;")
             dialog_layout.addWidget(lbl_warn)
-
+            
             btn_layout = QHBoxLayout()
-
+            
             btn_alarm_off = QPushButton("경보 끄기")
             btn_alarm_off.setIcon(self.get_icon("bell.png"))
             btn_alarm_off.setFixedHeight(45)
-            btn_alarm_off.setStyleSheet(
-                "background-color: #FFFFFF; "
-                "border: 1px solid #F5CDCD; "
-                "color: #B23B3B; font-weight: bold; "
-                "border-radius: 12px;"
-            )
-            btn_alarm_off.clicked.connect(self.stop_alarm)
-
+            btn_alarm_off.setStyleSheet("background-color: #FFFFFF; border: 1px solid #F5CDCD; color: #B23B3B; font-weight: bold; border-radius: 12px;")
+            btn_alarm_off.clicked.connect(lambda: [self._alarm_timer.stop(), self.btn_alert_off.setText(" 경보 꺼짐")])
+            
             btn_confirm = QPushButton("확인")
             btn_confirm.setFixedHeight(45)
-            btn_confirm.setStyleSheet(
-                "background-color: #3E3832; color: white; "
-                "font-weight: bold; border-radius: 12px;"
-            )
-            # 확인 버튼은 팝업만 닫고 경보음은 계속 유지
+            btn_confirm.setStyleSheet("background-color: #3E3832; color: white; font-weight: bold; border-radius: 12px;")
             btn_confirm.clicked.connect(self.smoke_dialog.close)
-
+            
             btn_layout.addWidget(btn_alarm_off)
             btn_layout.addWidget(btn_confirm)
             dialog_layout.addLayout(btn_layout)
-
+            
             self.smoke_dialog.exec()
 
     def stop_alarm(self):
@@ -1160,16 +1003,9 @@ class KitchenApp(QWidget):
             if ret:
                 try:
                     frame, gestures = self.gesture_controller.process(frame)
-                    if gestures: 
+                    if gestures:
                         current_gesture = gestures[0]["gesture"].upper()
-                        self.lbl_gesture.setText(current_gesture)
-                        
-                        # 인식된 제스처에 따라 LIVE 상태등 색상 동적 변경 (노랑/빨강)
-                        if current_gesture in ["THUMBSUP", "OK", "FIST", "FIVE"]:
-                            self.cam_live.setStyleSheet("background-color: #1A1A1A; color: #E2B714; border-radius: 12px; padding: 4px 12px; font-size: 11px; font-weight: bold;")
-                        else:
-                            self.cam_live.setStyleSheet("background-color: #1A1A1A; color: #D9534F; border-radius: 12px; padding: 4px 12px; font-size: 11px; font-weight: bold;")
-                        
+                        self.lbl_gesture.setText(current_gesture) 
                         # 스냅 보강 (숫자 제스처 인식 시 해당 화구 포커스 연동)
                     if gestures and self.gesture_controller.input_mode=='POT_SELECT': #오작동 방지를 위해 화구 선택 모드일때만 작동하도록함
                         #손이 비어 있는지 아닌지 검사후 넘어감!!!
@@ -1182,8 +1018,6 @@ class KitchenApp(QWidget):
                             self.select_burner(3)
                         elif gesture_name == "four":
                             self.select_burner(4)
-                    else:
-                        self.cam_live.setStyleSheet("background-color: #1A1A1A; color: #A69B91; border-radius: 12px; padding: 4px 12px; font-size: 11px; font-weight: bold;")
                 except Exception as e: 
                     print(f"[KitchenApp] 제스처 처리 중 오류 발생: {e}")
                     import traceback  #에러 추론 위해 추가!!!
