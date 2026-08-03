@@ -11,16 +11,16 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QToolButton, QDialog,
     QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea
 )
-from src.gesture import GestureController
-from src.burner import SmokeDetector, draw_smoke_boxes, detect_pans, PanTracker, draw_pans
+from src.gesture import GestureController, VoiceAssistant
+from src.burner import SmokeDetector, draw_smoke_boxes
 
 class KitchenApp(QWidget):
     def __init__(self):
         super().__init__()
 
         self.smoke_dialog = QDialog(self)
-        # self.video_source=0 #모드 설정
-        self.video_source="data/pots.mp4"
+        self.video_source=0 #모드 설정
+        # self.video_source="data/pots_3.mp4"
         # 웹캠 및 제스처 컨트롤러 초기화
         self.cap = None
         self.gesture_controller = GestureController()
@@ -43,12 +43,9 @@ class KitchenApp(QWidget):
         self._smoke_box_cache = []
         self.somoke_dialog=None #팝업창 변수
 
-        # 화구 위 팬 감지 캐시 (5프레임마다 한 번만 다시 탐지하고, 그 사이엔 캐시된 결과를 그림)
-        self._pan_tracker = PanTracker()
-        self._pan_cache = []
-        self._pan_detect_interval = 5
-        self._pan_frame_count = 0
-
+        # 음성 비서 (TTS 엔진 초기화 + 마이크 접근도 무거울 수 있어서 지연 초기화)
+        self.voice_assistant = None
+        QTimer.singleShot(0, self._init_voice_assistant)
 
         self.is_mini_mode = False
         self.first_mini_entry = True  # 앱 실행 후 첫 미니모드 진입 여부 체크용 플래그
@@ -317,7 +314,7 @@ class KitchenApp(QWidget):
             QPushButton:hover { background-color: #FAEEEE; }
         """)
         
-        self.btn_pause.clicked.connect(self.pause_all_timers)
+        self.btn_pause.clicked.connect(self.toggle_all_timers)
         self.btn_reset.clicked.connect(self.reset_all_timers)
 
         for b in [self.btn_pause, self.btn_reset, self.btn_alert_off]:
@@ -351,6 +348,7 @@ class KitchenApp(QWidget):
         self.gesture_controller.timer_pause_signal.connect(self.pause_selected_timer)
         self.gesture_controller.timer_reset_signal.connect(self.reset_selected_timer)
         self.gesture_controller.timer_pause_all_signal.connect(self.pause_all_timers)
+        self.gesture_controller.timer_resume_all_signal.connect(self.resume_all_timers)
         self.gesture_controller.timer_reset_all_signal.connect(self.reset_all_timers)
         self.gesture_controller.timer_add_time_signal.connect(self.add_time_to_selected_pot)
         self.gesture_controller.timer_adjust_seconds_signal.connect(self.adjust_selected_pot_seconds)
@@ -555,25 +553,33 @@ class KitchenApp(QWidget):
             if self.is_mini_mode:
                 self.update_mini_mode_layout()
 
-    def pause_all_timers(self):
-        """모든 화구의 타이머를 일괄 정지 또는 재개하는 메서드"""
+    def toggle_all_timers(self):
+        """모든 화구의 타이머를 일괄 정지 또는 재개하는 메서드 (전체 정지/재생 버튼용 토글)"""
         any_running = any(state == "실행" for state in self.pot_states)
         if any_running:
-            for i in range(4):
-                if self.pot_states[i] == "실행":
-                    self.pot_states[i] = "정지"
-                    self.timer_buttons[i].setIcon(self.get_icon("21_play.png"))
-                    self.timer_buttons[i].setStyleSheet("background-color: #D5BDAF; border-radius: 16px; border: none;")
-            self.btn_pause.setText(" 전체 재생")
-            self.btn_pause.setIcon(self.get_icon("pause.png"))
+            self.pause_all_timers()
         else:
-            for i in range(4):
-                if self.pot_states[i] == "정지" and self.pot_times[i] > 0:
-                    self.pot_states[i] = "실행"
-                    self.timer_buttons[i].setIcon(self.get_icon("22_pause.png"))
-                    self.timer_buttons[i].setStyleSheet("background-color: #EAE0D5; border-radius: 16px; border: none;")
-            self.btn_pause.setText(" 전체 정지")
-            self.btn_pause.setIcon(self.get_icon("pause.png"))
+            self.resume_all_timers()
+
+    def pause_all_timers(self):
+        """실행 중인 모든 화구의 타이머를 정지시키는 메서드 (주먹 제스처: 화구 미선택 상태에서 전체 정지)"""
+        for i in range(4):
+            if self.pot_states[i] == "실행":
+                self.pot_states[i] = "정지"
+                self.timer_buttons[i].setIcon(self.get_icon("21_play.png"))
+                self.timer_buttons[i].setStyleSheet("background-color: #D5BDAF; border-radius: 16px; border: none;")
+        self.btn_pause.setText(" 전체 재생")
+        self.btn_pause.setIcon(self.get_icon("pause.png"))
+
+    def resume_all_timers(self):
+        """시간이 설정된 채 정지된 모든 화구의 타이머를 실행시키는 메서드 (손바닥 제스처: 화구 미선택 상태에서 전체 실행)"""
+        for i in range(4):
+            if self.pot_states[i] == "정지" and self.pot_times[i] > 0:
+                self.pot_states[i] = "실행"
+                self.timer_buttons[i].setIcon(self.get_icon("22_pause.png"))
+                self.timer_buttons[i].setStyleSheet("background-color: #EAE0D5; border-radius: 16px; border: none;")
+        self.btn_pause.setText(" 전체 정지")
+        self.btn_pause.setIcon(self.get_icon("pause.png"))
 
     def reset_all_timers(self):
         """모든 화구의 타이머와 상태를 초기화하는 메서드"""
@@ -811,6 +817,22 @@ class KitchenApp(QWidget):
         self.smoke_detector.smoke_detected.connect(self.on_smoke_detected)
         self.smoke_detector.smoke_cleared.connect(self.on_smoke_cleared)
 
+    def _init_voice_assistant(self):
+        """TTS 엔진/마이크 초기화가 무거울 수 있어 창이 뜬 뒤로 미루는 지연 초기화 메서드.
+        마이크가 없는 환경에서도 앱 전체가 죽지 않도록 실패를 흡수함."""
+        try:
+            self.voice_assistant = VoiceAssistant(self)
+            self.voice_assistant.start()
+        except Exception as e:
+            print(f"[KitchenApp] 음성 비서 초기화 실패: {e}")
+
+    def get_remaining_time(self, hob_id: int) -> int:
+        """음성 비서(VoiceAssistant)가 호출하는 콜백: 화구 번호(1~4)의 남은 타이머 시간(초)을 반환"""
+        idx = hob_id - 1
+        if 0 <= idx < len(self.pot_times):
+            return self.pot_times[idx]
+        return 0
+
     def _play_alarm(self):
         """별도 스레드에서 경고음 재생 (UI 블로킹 방지)"""
         def _beep():
@@ -841,17 +863,6 @@ class KitchenApp(QWidget):
                     print(f"[KitchenApp] 제스처 처리 중 오류 발생: {e}")
                     import traceback  #에러 추론 위해 추가!!!
                     traceback.print_exc
-
-                # 화구 위 프라이팬/조리도구 가장자리 감지 및 붉은색 표시
-                # (5프레임마다만 다시 탐지 + 최근 감지 이력으로 확인된 것만 그려서 오탐 억제)
-                try:
-                    self._pan_frame_count += 1
-                    if self._pan_frame_count % self._pan_detect_interval == 0:
-                        raw_pans = detect_pans(frame)
-                        self._pan_cache = self._pan_tracker.update(raw_pans)
-                    frame = draw_pans(frame, self._pan_cache)
-                except Exception as e:
-                    print(f"[KitchenApp] 화구/팬 감지 중 오류 발생: {e}")
 
                 self._smoke_frame_count += 1
                 if self.smoke_detector is not None and self._smoke_frame_count % 5 == 0:
