@@ -1,5 +1,6 @@
 import sys
 import os
+import ctypes
 import cv2
 import threading
 import winsound
@@ -660,18 +661,20 @@ class KitchenApp(QWidget):
         self.move(screen.width() + screen.x() - self.width() - 20, screen.height() + screen.y() - self.height() - 20)
 
     def _force_to_front(self):
-        """
-        다른 창(브라우저 등)이 OS 포그라운드를 쥐고 있으면 raise_()/activateWindow()가
-        내부적으로 쓰는 SetForegroundWindow가 Windows에 의해 막혀서 조용히 실패함.
-        WindowStaysOnTopHint를 잠깐 켰다 끄면 SetWindowPos(HWND_TOPMOST)가 호출되는데,
-        이건 포그라운드 권한 없이도 항상 허용되므로 이 방법으로 강제로 맨 위로 끌어올림.
-        """
-        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         self.show()
+        if sys.platform == "win32":
+            try:
+                hwnd = int(self.winId())
+                HWND_TOPMOST, HWND_NOTOPMOST = -1, -2
+                SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW = 0x0002, 0x0001, 0x0040
+                flags = SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                user32 = ctypes.windll.user32
+                user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
+                user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+            except Exception as e:
+                print(f"[KitchenApp] 창을 강제로 앞으로 가져오는 데 실패: {e}")
         self.raise_()
         self.activateWindow()
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
-        self.show()
 
     def on_snap_swipe(self):
         """전체 대시보드 화면 ↔ 우측 하단 고정 미니 위젯 모드 간의 전환을 수행하는 메서드"""
