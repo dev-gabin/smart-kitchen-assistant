@@ -41,6 +41,7 @@ class KitchenApp(QWidget):
         self._alarm_timer.timeout.connect(self._play_alarm)
 
         self._smoke_frame_count = 0
+        self._smoke_box_cache = []  # 추론은 5프레임마다만 돌고, 그 사이 프레임에는 이 캐시로 박스를 그림
 
         # 사용자가 경보를 끈 뒤 신뢰도 상승 시 재경보하기 위한 상태
         self._alarm_silenced = False
@@ -923,7 +924,9 @@ class KitchenApp(QWidget):
             dialog_layout.addLayout(btn_layout)
 
         if not self.smoke_dialog.isVisible():
-            self.smoke_dialog.exec()
+            # exec()는 모달 블로킹 호출이라 닫힐 때까지 update_frame()이 멈춰서 웹캠도 같이 멈춤.
+            # show()는 창은 그대로 위에 띄우면서 블로킹하지 않아 웹캠 타이머가 계속 돌아감.
+            self.smoke_dialog.show()
 
     def stop_alarm(self):
         """현재 경보를 끄고, 끈 시점의 신뢰도를 저장합니다."""
