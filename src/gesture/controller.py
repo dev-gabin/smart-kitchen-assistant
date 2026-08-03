@@ -117,7 +117,7 @@ class GestureController(QObject):
     def _classify_gesture(self, hand_landmarks) -> str:
         """손 랜드마크 관절 각도를 계산하여 KNN으로 제스처를 분류하는 함수"""
         if self.knn is None:
-            return TEST
+            return self.TEST
         joint = np.zeros((21, 3))
         for j, lm in enumerate(hand_landmarks.landmark):
             joint[j] = [lm.x, lm.y, lm.z]
@@ -175,7 +175,7 @@ class GestureController(QObject):
                     gesture_name = self._classify_gesture(hand_landmarks)
                     
                     
-                except Exception:
+                except Exception as e:
                     print(f"[GestureController] 제스처 분류 중 오류: {e}")
                     import traceback
                     traceback.print_exc()
