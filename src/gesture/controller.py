@@ -23,6 +23,7 @@ _ANGLE_TO = [1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19]
 
 
 class GestureController(QObject):
+    
     # PySide6 UI 메인 창과 통신하기 위한 커스텀 시그널 정의
     swipe_detected = Signal()
 
@@ -48,6 +49,8 @@ class GestureController(QObject):
 
     def __init__(self, max_num_hands: int = 2, gesture_data_path: str = 'data/gesture_train.csv'):
         super().__init__()
+
+        self.TEST = "!"
         
         # ⏱️ 동작별 연타 방지 쿨다운 타이머 설정
         self.cooldown_sec = 1.0           # 기본 제스처 쿨다운 (콤보/스와이프 등 1~4 선택 외의 동작에 사용)
@@ -114,7 +117,7 @@ class GestureController(QObject):
     def _classify_gesture(self, hand_landmarks) -> str:
         """손 랜드마크 관절 각도를 계산하여 KNN으로 제스처를 분류하는 함수"""
         if self.knn is None:
-            return '?'
+            return TEST
         joint = np.zeros((21, 3))
         for j, lm in enumerate(hand_landmarks.landmark):
             joint[j] = [lm.x, lm.y, lm.z]
@@ -131,10 +134,10 @@ class GestureController(QObject):
         # 🟢 거리가 너무 멀다는 것은 '제스처를 취한 게 아니라 그냥 손을 움직인 것'이므로 오인식으로 차단!
         # (임계값 6000.0은 테스트해보면서 조절 가능하며, 값이 낮을수록 깐깐하게 판정)
         if dists is not None and dists[0][0]>6000.0:
-            return '?'
+            return self.TEST
         
         idx = int(knn_results[0][0])
-        return GESTURE_NAMES.get(idx, '?')
+        return GESTURE_NAMES.get(idx, self.TEST)
 
     def set_mode_pot_select(self):
         """화구 포커스를 유지한 채 대기 모드로 복귀하는 함수"""
@@ -176,7 +179,7 @@ class GestureController(QObject):
                     print(f"[GestureController] 제스처 분류 중 오류: {e}")
                     import traceback
                     traceback.print_exc()
-                    gesture_name = '?'
+                    gesture_name = self.TEST
                     
 
                 wrist = hand_landmarks.landmark[0]
@@ -230,7 +233,7 @@ class GestureController(QObject):
 
                         # ⚡ 오인식 방지: 같은 제스처를 일정 시간 이상 유지해야 동작 인정.
                         # 1/2/3/4는 pot_select_hold_sec(1.5초), 그 외 제스처는 cooldown_sec을 기준으로 판단.
-                        if g_name != '?':
+                        if g_name != self.TEST:
                             if g_name != self.last_seen_gesture:
                                 self.last_seen_gesture = g_name
                                 self.gesture_hold_start = curr_time
