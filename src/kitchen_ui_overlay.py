@@ -709,6 +709,35 @@ class KitchenApp(QWidget):
                     self.timer_buttons[i].setStyleSheet("background-color: #D5BDAF; border-radius: 16px; border: none;")
 
                     self.refresh_pot_status(i)
+                    #타이머 종료 토스트 추가
+                    self.show_toast(f"0{i+1}번 화구 조리가 완료되었습니다!")
+
+    #타이머 종료 토스트 함수
+    def show_toast(self, message):
+        """화면 하단에 잠시 나타났다 사라지는 토스트 메시지 위젯 생성"""
+        toast = QLabel(message, self)
+        toast.setAlignment(Qt.AlignCenter)
+        
+        toast.setStyleSheet("""
+            background-color: rgba(62, 56, 50, 0.9);
+            color: #FFFFFF;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 12px;
+            padding: 12px 24px;
+        """)
+        
+        toast.adjustSize()
+        x = (self.width() - toast.width()) // 2
+        y = self.height() - toast.height() - 100 
+        toast.move(x, y)
+        
+        toast.raise_()
+        toast.show()
+        QTimer.singleShot(2500, toast.deleteLater)
+    # 👆 여기까지! 👆
+
+
     def refresh_pot_label(self, idx):
         """특정 화구의 타이머 텍스트를 mm:ss 형식으로 갱신하는 메서드"""
         t = self.pot_times[idx]
