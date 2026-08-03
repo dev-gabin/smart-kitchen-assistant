@@ -33,6 +33,7 @@ class GestureController(QObject):
     timer_reset_signal = Signal()
 
     timer_pause_all_signal = Signal()
+    timer_resume_all_signal = Signal()  # 화구 미선택 상태에서 손바닥(five) = 전체 타이머 실행
     timer_reset_all_signal = Signal()
     
     sidebar_focus_signal = Signal(int)

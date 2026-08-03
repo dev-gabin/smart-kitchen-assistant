@@ -12,8 +12,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea,
     
 )
-from src.gesture import GestureController
-from src.smoke import SmokeDetector
+from src.gesture import GestureController, VoiceAssistant
+from src.burner import SmokeDetector, draw_smoke_boxes
 
 class ToggleSwitch(QPushButton):
     """
@@ -56,16 +56,16 @@ class KitchenApp(QWidget):
         self.gesture_controller.swipe_detected.connect(self.on_snap_swipe)
 
         # 2) SmokeDetector 생성 및 시그널 연결
-        self.smoke_detector = SmokeDetector()
-        self.smoke_detector.smoke_detected.connect(self.on_smoke_detected)
-        self.smoke_detector.smoke_cleared.connect(self.on_smoke_cleared)
+        # YOLO 모델 로딩이 무거워서(수 초 소요) __init__에서 바로 만들면 창이 뜨기도 전에 멈춰버림.
+        # 창이 먼저 보이도록 이벤트 루프가 돌기 시작한 직후(0ms 뒤)로 로딩을 미룸.
+        self.smoke_detector = None
+        QTimer.singleShot(0, self._init_smoke_detector)
 
         # 경고음 반복 타이머 (2초 간격)
         self._alarm_timer = QTimer(self)
         self._alarm_timer.setInterval(2000)
         self._alarm_timer.timeout.connect(self._play_alarm)
 
-        # 연기 감지는 매 5프레임마다 실행 (성능 최적화)
         self._smoke_frame_count = 0
 
         # 사용자가 경보를 끈 뒤 신뢰도 상승 시 재경보하기 위한 상태
@@ -78,6 +78,9 @@ class KitchenApp(QWidget):
         self._clear_confirm_count = 40
         self._ui_smoke_active = False
 
+        # 음성 비서 (TTS 엔진 초기화 + 마이크 접근도 무거울 수 있어서 지연 초기화)
+        self.voice_assistant = None
+        QTimer.singleShot(0, self._init_voice_assistant)
 
         self.is_mini_mode = False
         self.first_mini_entry = True  # 앱 실행 후 첫 미니모드 진입 여부 체크용 플래그
@@ -392,7 +395,7 @@ class KitchenApp(QWidget):
             QPushButton:hover { background-color: #FAEEEE; }
         """)
         
-        self.btn_pause.clicked.connect(self.pause_all_timers)
+        self.btn_pause.clicked.connect(self.toggle_all_timers)
         self.btn_reset.clicked.connect(self.reset_all_timers)
         self.btn_alert_off.clicked.connect(self.stop_alarm)
 
@@ -427,6 +430,7 @@ class KitchenApp(QWidget):
         self.gesture_controller.timer_pause_signal.connect(self.pause_selected_timer)
         self.gesture_controller.timer_reset_signal.connect(self.reset_selected_timer)
         self.gesture_controller.timer_pause_all_signal.connect(self.pause_all_timers)
+        self.gesture_controller.timer_resume_all_signal.connect(self.resume_all_timers)
         self.gesture_controller.timer_reset_all_signal.connect(self.reset_all_timers)
         self.gesture_controller.sidebar_focus_signal.connect(self.set_sidebar_focus)
         self.gesture_controller.timer_toggle_long_mode_signal.connect(self.toggle_long_time_mode)
@@ -645,52 +649,33 @@ class KitchenApp(QWidget):
             if self.is_mini_mode:
                 self.update_mini_mode_layout()
 
-    def smart_start_timers(self):
-        """
-        💡 [수정] 👍 (엄지 척) 제스처 (스마트 마스터 제어):
-        1. 세팅 후 대기/정지 중인 화구가 하나라도 있으면 -> 기존 실행 중인 건 건드리지 않고, 대기 중인 놈들만 쿨하게 추가 시작!
-        2. 전부 다 신나게 실행 중이면 -> 그때서야 전체 일시 정지 쾅!
-        """
-        ready_indices = [i for i in range(4) if self.pot_times[i] > 0 and self.pot_states[i] in ["대기", "정지"]]
-        running_indices = [i for i in range(4) if self.pot_states[i] == "실행"]
-        
-        # 1. 방금 세팅해서 대기/정지 중인 게 있다면 무조건 그것들을 우선 시작!
-        if ready_indices:
-            for idx in ready_indices:
-                self.pot_states[idx] = "실행"
-                self.timer_buttons[idx].setIcon(self.get_icon("22_pause.png"))
-                self.timer_buttons[idx].setStyleSheet("background-color: #EAE0D5; border-radius: 16px; border: none;")
-            if self.selected_pot:
-                self.lbl_selected.setText(f"0{self.selected_pot} [스마트 시작됨]")
-        
-        # 2. 대기/정지 중인 건 하나도 없고, 전부 실행 중일 때만 -> 전체 멈춤!
-        elif running_indices:
-            for i in running_indices:
+    def toggle_all_timers(self):
+        """모든 화구의 타이머를 일괄 정지 또는 재개하는 메서드 (전체 정지/재생 버튼용 토글)"""
+        any_running = any(state == "실행" for state in self.pot_states)
+        if any_running:
+            self.pause_all_timers()
+        else:
+            self.resume_all_timers()
+
+    def pause_all_timers(self):
+        """실행 중인 모든 화구의 타이머를 정지시키는 메서드 (주먹 제스처: 화구 미선택 상태에서 전체 정지)"""
+        for i in range(4):
+            if self.pot_states[i] == "실행":
                 self.pot_states[i] = "정지"
                 self.timer_buttons[i].setIcon(self.get_icon("21_play.png"))
                 self.timer_buttons[i].setStyleSheet("background-color: #D5BDAF; border-radius: 16px; border: none;")
-            if self.selected_pot:
-                self.lbl_selected.setText("전체 일시 정지됨")
-        self.refresh_all_pot_statuses() # 4개의 화구에 정지 일시 반영   
-    def pause_all_timers(self):
-        """모든 화구의 타이머를 일괄 정지 또는 재개하는 메서드"""
-        any_running = any(state == "실행" for state in self.pot_states)
-        if any_running:
-            for i in range(4):
-                if self.pot_states[i] == "실행":
-                    self.pot_states[i] = "정지"
-                    self.timer_buttons[i].setIcon(self.get_icon("21_play.png"))
-                    self.timer_buttons[i].setStyleSheet("background-color: #D5BDAF; border-radius: 16px; border: none;")
-            self.btn_pause.setText(" 전체 재생")
-            self.btn_pause.setIcon(self.get_icon("pause.png"))
-        else:
-            for i in range(4):
-                if self.pot_states[i] == "정지" and self.pot_times[i] > 0:
-                    self.pot_states[i] = "실행"
-                    self.timer_buttons[i].setIcon(self.get_icon("22_pause.png"))
-                    self.timer_buttons[i].setStyleSheet("background-color: #EAE0D5; border-radius: 16px; border: none;")
-            self.btn_pause.setText(" 전체 정지")
-            self.btn_pause.setIcon(self.get_icon("pause.png"))
+        self.btn_pause.setText(" 전체 재생")
+        self.btn_pause.setIcon(self.get_icon("pause.png"))
+
+    def resume_all_timers(self):
+        """시간이 설정된 채 정지된 모든 화구의 타이머를 실행시키는 메서드 (손바닥 제스처: 화구 미선택 상태에서 전체 실행)"""
+        for i in range(4):
+            if self.pot_states[i] == "정지" and self.pot_times[i] > 0:
+                self.pot_states[i] = "실행"
+                self.timer_buttons[i].setIcon(self.get_icon("22_pause.png"))
+                self.timer_buttons[i].setStyleSheet("background-color: #EAE0D5; border-radius: 16px; border: none;")
+        self.btn_pause.setText(" 전체 정지")
+        self.btn_pause.setIcon(self.get_icon("pause.png"))
 
         self.refresh_all_pot_statuses() #네 화구 상태 글씨가 한꺼번에 바뀜
 
@@ -906,6 +891,20 @@ class KitchenApp(QWidget):
         screen = self.screen().geometry()
         self.move(screen.width() + screen.x() - self.width() - 20, screen.height() + screen.y() - self.height() - 20)
 
+    def _force_to_front(self):
+        """
+        다른 창(브라우저 등)이 OS 포그라운드를 쥐고 있으면 raise_()/activateWindow()가
+        내부적으로 쓰는 SetForegroundWindow가 Windows에 의해 막혀서 조용히 실패함.
+        WindowStaysOnTopHint를 잠깐 켰다 끄면 SetWindowPos(HWND_TOPMOST)가 호출되는데,
+        이건 포그라운드 권한 없이도 항상 허용되므로 이 방법으로 강제로 맨 위로 끌어올림.
+        """
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
+        self.show()
+
     def on_snap_swipe(self):
         """전체 대시보드 화면 ↔ 우측 하단 고정 미니 위젯 모드 간의 전환을 수행하는 메서드"""
         screen = self.screen().geometry()
@@ -951,7 +950,8 @@ class KitchenApp(QWidget):
             else:
                 self.update_mini_mode_layout()
             self.show()
-            self.toggle_switch.setChecked(True)
+            self.raise_()
+            self.activateWindow()
         else:
             # [대시보드 복구] 실행 시작 당시의 정상 창 플래그 및 스타일 완벽 복원
             self.setWindowFlags(self.normal_window_flags)
@@ -983,7 +983,8 @@ class KitchenApp(QWidget):
                 w.show()
                 w.setStyleSheet("background-color: #FFFDF9; border: 2px solid #8C6D53; border-radius: 16px;" if self.selected_pot == (i + 1) else "background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
             
-            self.show(); self.raise_(); self.activateWindow(); self.is_mini_mode = False ##대시보드로 돌아 올때 제스처 조작 락 해제!
+            self._force_to_front()
+            self.is_mini_mode = False ##대시보드로 돌아 올때 제스처 조작 락 해제!
             self.gesture_controller.is_mini_mode=False
             self.toggle_switch.setChecked(False)
 
@@ -1114,6 +1115,28 @@ class KitchenApp(QWidget):
         if self.smoke_dialog and self.smoke_dialog.isVisible():
             self.smoke_dialog.close()
 
+    def _init_smoke_detector(self):
+        """무거운 YOLO 모델 로딩을 창이 뜬 뒤로 미루는 지연 초기화 메서드 (시작 시 멈춤 방지용)"""
+        self.smoke_detector = SmokeDetector()
+        self.smoke_detector.smoke_detected.connect(self.on_smoke_detected)
+        self.smoke_detector.smoke_cleared.connect(self.on_smoke_cleared)
+
+    def _init_voice_assistant(self):
+        """TTS 엔진/마이크 초기화가 무거울 수 있어 창이 뜬 뒤로 미루는 지연 초기화 메서드.
+        마이크가 없는 환경에서도 앱 전체가 죽지 않도록 실패를 흡수함."""
+        try:
+            self.voice_assistant = VoiceAssistant(self)
+            self.voice_assistant.start()
+        except Exception as e:
+            print(f"[KitchenApp] 음성 비서 초기화 실패: {e}")
+
+    def get_remaining_time(self, hob_id: int) -> int:
+        """음성 비서(VoiceAssistant)가 호출하는 콜백: 화구 번호(1~4)의 남은 타이머 시간(초)을 반환"""
+        idx = hob_id - 1
+        if 0 <= idx < len(self.pot_times):
+            return self.pot_times[idx]
+        return 0
+
     def _play_alarm(self):
         """별도 스레드에서 경고음 재생 (UI 블로킹 방지)"""
         def _beep():
@@ -1166,10 +1189,9 @@ class KitchenApp(QWidget):
                     import traceback  #에러 추론 위해 추가!!!
                     traceback.print_exc
 
-                # 연기 감지 (매 5프레임마다 추론)
                 self._smoke_frame_count += 1
-                if self._smoke_frame_count % 5 == 0:
-                    frame, is_smoke, conf = self.smoke_detector.process(frame)
+                if self.smoke_detector is not None and self._smoke_frame_count % 5 == 0:
+                    is_smoke, conf, self._smoke_box_cache = self.smoke_detector.detect(frame)
                     if is_smoke:
                         self.lbl_smoke.setText(f"Smoke: ⚠️ DETECTED ({conf:.0%})")
                         self.lbl_smoke.setStyleSheet(
@@ -1183,6 +1205,7 @@ class KitchenApp(QWidget):
                         self.lbl_smoke.setStyleSheet("")
                         # 🟢 연기가 사라졌을 때 팝업 창과 알람을 해제하는 함수 호출!
                         self.on_smoke_cleared()
+                frame = draw_smoke_boxes(frame, self._smoke_box_cache)
 
                 # 렌더링 처리
                 rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
