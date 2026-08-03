@@ -19,9 +19,9 @@ class KitchenApp(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.smoke_dialog = QDialog(self)
+        self.smoke_dialog = None
         self.video_source=0 #모드 설정
-        # self.video_source="data/pots_3.mp4"
+        # self.video_source="data/pan_fire_3.mp4"
         # 웹캠 및 제스처 컨트롤러 초기화
         self.cap = None
         self.gesture_controller = GestureController()
@@ -41,8 +41,16 @@ class KitchenApp(QWidget):
         self._alarm_timer.timeout.connect(self._play_alarm)
 
         self._smoke_frame_count = 0
-        self._smoke_box_cache = []
-        self.somoke_dialog=None #팝업창 변수
+
+        # 사용자가 경보를 끈 뒤 신뢰도 상승 시 재경보하기 위한 상태
+        self._alarm_silenced = False
+        self._latest_smoke_conf = 0.0
+        self._silenced_conf = 0.0
+
+        # 일시적인 미감지로 경보가 바로 해제되지 않도록 연속 미감지 횟수 확인
+        self._clear_count = 0
+        self._clear_confirm_count = 40
+        self._ui_smoke_active = False
 
         # 음성 비서 (TTS 엔진 초기화 + 마이크 접근도 무거울 수 있어서 지연 초기화)
         self.voice_assistant = None
@@ -67,6 +75,7 @@ class KitchenApp(QWidget):
     def init_UI(self):
         """메인 GUI 레이아웃 및 스타일을 초기화하는 메서드"""
         self.setWindowTitle("Smart Kitchen Assistant")
+        self.setWindowIcon(QIcon(os.path.join("img", "01_chef_hat.png")))
         self.resize(1150, 750) 
         self.setMinimumSize(0, 0)
         
@@ -102,12 +111,24 @@ class KitchenApp(QWidget):
         
         title_top_layout = QHBoxLayout()
         title_top_layout.setContentsMargins(0, 0, 0, 0)
-        title_top_layout.setSpacing(8)
+        title_top_layout.setSpacing(2)
         
         title_title = QLabel("Smart Kitchen")
+
+        #제목 옆에 아이콘 추가
+        self.lbl_title_icon = QLabel()
+        title_pixmap = QPixmap(os.path.join("img", "chef.png"))
+        self.lbl_title_icon.setPixmap(
+            title_pixmap.scaled(43, 43, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        )
+        self.lbl_title_icon.setFixedSize(46, 46)
+        self.lbl_title_icon.setAlignment(Qt.AlignCenter)
+        self.lbl_title_icon.setStyleSheet("background: transparent; border: none;")
+
         title_title.setStyleSheet("font-size: 24px; font-weight: 900; color: #3E3832; background: transparent;")
+        title_top_layout.addWidget(self.lbl_title_icon)
         title_top_layout.addWidget(title_title)
-        header_layout.addLayout(title_top_layout)
+      
 
         sub_layout = QHBoxLayout()
         sub_layout.setContentsMargins(0, 0, 0, 0)
@@ -131,7 +152,7 @@ class KitchenApp(QWidget):
         sub_layout.addWidget(mode_badge)
         sub_layout.addStretch()
         
-        title_box.addWidget(title_title)
+        title_box.addLayout(title_top_layout)
         title_box.addLayout(sub_layout)
         
         header_layout.addLayout(title_box)
@@ -151,6 +172,14 @@ class KitchenApp(QWidget):
         header_layout.addLayout(widget_layout)
         header_layout.addSpacing(15)
 
+        for icon_file in ["08_settings.png", "24_brightness.png", "23_fullscreen.png"]:
+            btn = QPushButton()
+            btn.setIcon(self.get_icon(icon_file))
+            btn.setIconSize(QSize(26, 26))
+            btn.setFixedSize(50, 50)
+            btn.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 12px;")
+            header_layout.addWidget(btn)
+            
         self.content_layout.addWidget(self.header_frame)
 
         # 중단 영역 (웹캠 카메라 뷰 카드 + 화구 타이머 리스트 카드)
@@ -166,6 +195,9 @@ class KitchenApp(QWidget):
         cam_header = QHBoxLayout()
         
         cam_icon_lbl = QLabel()
+        cam_pixmap = QPixmap("img/08_settings.png")
+        if not cam_pixmap.isNull():
+            cam_icon_lbl.setPixmap(cam_pixmap.scaled(26, 26, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         cam_icon_lbl.setStyleSheet("border: none; background: transparent;")
         
         cam_title = QLabel(" 카메라 뷰")
@@ -233,16 +265,23 @@ class KitchenApp(QWidget):
         
         self.pot_wrappers = []
         self.timer_buttons = []
-        
-        for num, icon_file, name, time_lbl in [
-            ("01", "11_noodle_bowl.png", "라면", self.lbl_pot1),
-            ("02", "10_pot.png", "계란 삶기", self.lbl_pot2),
-            ("03", "13_pasta_bowl.png", "파스타", self.lbl_pot3),
-            ("04", "15_steaming_pot.png", "찜 요리", self.lbl_pot4)
+
+        # 화구마다 화면에 표시할 상태 QLabel 저장
+        self.pot_status_labels = []
+
+        for num, time_lbl in [
+            ("01", self.lbl_pot1),
+            ("02", self.lbl_pot2),
+            ("03", self.lbl_pot3),
+            ("04", self.lbl_pot4)
         ]:
-            w, b_play = self.create_timer_item(num, icon_file, name, time_lbl)
-            self.timer_layout.addWidget(w)
-            self.pot_wrappers.append(w)
+           w, b_play, status_lbl = self.create_timer_item(
+               num, "burn2.png", "", time_lbl
+)
+
+           self.timer_layout.addWidget(w)
+           self.pot_wrappers.append(w)
+           self.pot_status_labels.append(status_lbl)
             
         self.timer_layout.addStretch()
         self.middle_layout.addWidget(self.timer_frame, stretch=3)
@@ -317,6 +356,7 @@ class KitchenApp(QWidget):
         
         self.btn_pause.clicked.connect(self.toggle_all_timers)
         self.btn_reset.clicked.connect(self.reset_all_timers)
+        self.btn_alert_off.clicked.connect(self.stop_alarm)
 
         for b in [self.btn_pause, self.btn_reset, self.btn_alert_off]:
             b.setIconSize(QSize(28, 28))
@@ -335,6 +375,7 @@ class KitchenApp(QWidget):
         self.selected_pot = None           
         self.pot_times = [0, 0, 0, 0]      
         self.pot_states = ["대기", "대기", "대기", "대기"]  
+        self.pot_confirmed = [False, False, False, False] #셋팅 확정 안함
         self.pot_labels = [self.lbl_pot1, self.lbl_pot2, self.lbl_pot3, self.lbl_pot4]
         self.is_long_time_mode = False
 
@@ -351,6 +392,7 @@ class KitchenApp(QWidget):
         self.gesture_controller.timer_pause_all_signal.connect(self.pause_all_timers)
         self.gesture_controller.timer_resume_all_signal.connect(self.resume_all_timers)
         self.gesture_controller.timer_reset_all_signal.connect(self.reset_all_timers)
+        self.gesture_controller.timer_toggle_long_mode_signal.connect(self.toggle_long_time_mode)
         self.gesture_controller.timer_add_time_signal.connect(self.add_time_to_selected_pot)
         self.gesture_controller.timer_adjust_seconds_signal.connect(self.adjust_selected_pot_seconds)
         self.gesture_controller.timer_auto_start_signal.connect(self.start_selected_timer_if_ready)
@@ -373,10 +415,15 @@ class KitchenApp(QWidget):
         lbl_icon.setStyleSheet("border: none; background: transparent;")
         pixmap = QPixmap(os.path.join("img", icon_file))
         if not pixmap.isNull():
-            lbl_icon.setPixmap(pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            
+            lbl_icon.setPixmap(pixmap.scaled(50, 50, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         lbl_name = QLabel(name)
         lbl_name.setStyleSheet("font-size: 13px; color: #786C61; font-weight: bold; border: none;")
+        lbl_status= QLabel("대기")
+        lbl_status.setFixedWidth(72)
+        lbl_status.setStyleSheet(
+            "font-size: 12px; color: #786C61; "
+            "font-weight: bold; border: none;"
+        )
         
         # 시간 레이블이 오른쪽 끝에 찰싹 붙도록 너비를 살짝 줄이고 우측 정렬
         time_lbl.setStyleSheet("font-size: 18px; font-weight: 900; color: #3E3832; border: none;")
@@ -396,13 +443,40 @@ class KitchenApp(QWidget):
         layout.addSpacing(5)
         layout.addWidget(lbl_icon)
         layout.addSpacing(5)
-        layout.addWidget(lbl_name)
+        layout.addWidget(lbl_status)
         layout.addStretch()  # 남는 공간을 모두 흡수해서 시간과 버튼을 오른쪽 끝으로 밀어줌
         layout.addWidget(time_lbl)
         layout.addSpacing(5)
         layout.addWidget(btn_play)
         
-        return wrapper, btn_play
+        return wrapper, btn_play, lbl_status
+    def refresh_pot_status(self, idx):
+        """화구 상태를 화면에 표시합니다."""
+        state = self.pot_states[idx]
+
+        if state == "실행":
+            status_text = "조리 중"
+
+        elif state == "정지":
+            status_text = "일시정지"
+
+        elif self.selected_pot == idx + 1 and not self.pot_confirmed[idx]:
+            status_text = "시간 설정 중"
+
+        elif self.pot_times[idx] > 0:
+            status_text = "시작 대기"
+
+        else:
+            status_text = "대기"
+
+        self.pot_status_labels[idx].setText(status_text)
+
+
+    def refresh_all_pot_statuses(self):
+        """네 화구의 상태를 모두 새로 표시합니다."""
+        for idx in range(4):
+            self.refresh_pot_status(idx)
+        
 
     def create_status_item(self, icon_file, title, val_lbl, sub, dot_color):
         """하단 상태 표시바 아이템 생성 헬퍼 함수"""
@@ -414,7 +488,7 @@ class KitchenApp(QWidget):
         icon_lbl = QLabel()
         pixmap = QPixmap(os.path.join("img", icon_file))
         if not pixmap.isNull():
-            icon_lbl.setPixmap(pixmap.scaled(36, 36, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            icon_lbl.setPixmap(pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         icon_lbl.setFixedSize(50, 50)
         icon_lbl.setAlignment(Qt.AlignCenter)
         icon_lbl.setStyleSheet("background-color: #F4EBE1; border-radius: 25px;")
@@ -461,6 +535,7 @@ class KitchenApp(QWidget):
                     w.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
         
         self.lbl_selected.setText(f"0{num} [시간 설정 중]")
+        self.refresh_all_pot_statuses() #4개 화구의 상태 글씨를 한꺼번에 다시 표시하는 함수
         
         # 미니모드 중에 숨겨져 있던 화구를 제스처로 선택하면 즉시 뿅! 나타나게 갱신
         if self.is_mini_mode:
@@ -510,7 +585,11 @@ class KitchenApp(QWidget):
     def confirm_pot_setting(self):
         """화구 시간 세팅을 확정하는 메서드"""
         if self.selected_pot is not None:
+            idx = self.selected_pot - 1
+            self.pot_confirmed[idx] = True
             self.lbl_selected.setText(f"0{self.selected_pot} [세팅 완료 / 조작 가능]")
+
+            self.refresh_pot_status(idx)
 
     def pause_selected_timer(self):
         """
@@ -534,12 +613,15 @@ class KitchenApp(QWidget):
                 self.timer_buttons[idx].setStyleSheet("background-color: #EAE0D5; border-radius: 16px; border: none;")
                 self.lbl_selected.setText(f"0{self.selected_pot} [개별 시작됨]")
 
+            self.refresh_pot_status(idx)
+
     def reset_selected_timer(self):
         """선택된 화구의 타이머를 초기화하는 메서드"""
         if self.selected_pot is not None:
             idx = self.selected_pot - 1
             self.pot_times[idx] = 0
             self.pot_states[idx] = "대기"
+            self.pot_confirmed[idx] = False
             self.refresh_pot_label(idx)
             self.timer_buttons[idx].setIcon(self.get_icon("21_play.png"))
             self.timer_buttons[idx].setStyleSheet("background-color: #D5BDAF; border-radius: 16px; border: none;")
@@ -547,6 +629,7 @@ class KitchenApp(QWidget):
             # 초기화 시 해당 화구 포커스 해제 (미니모드에서 즉시 숨기기 위함)
             self.selected_pot = None
             self.lbl_selected.setText("-")
+            self.refresh_all_pot_statuses()
             for w in self.pot_wrappers:
                 w.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
                 
@@ -582,11 +665,14 @@ class KitchenApp(QWidget):
         self.btn_pause.setText(" 전체 정지")
         self.btn_pause.setIcon(self.get_icon("pause.png"))
 
+        self.refresh_all_pot_statuses() #네 화구 상태 글씨가 한꺼번에 바뀜
+
     def reset_all_timers(self):
         """모든 화구의 타이머와 상태를 초기화하는 메서드"""
         for i in range(4):
             self.pot_times[i] = 0
             self.pot_states[i] = "대기"
+            self.pot_confirmed[i] = False
             self.refresh_pot_label(i)
             self.timer_buttons[i].setIcon(self.get_icon("21_play.png"))
             self.timer_buttons[i].setStyleSheet("background-color: #D5BDAF; border-radius: 16px; border: none;")
@@ -596,6 +682,7 @@ class KitchenApp(QWidget):
         
         self.selected_pot = None
         self.lbl_selected.setText("-")
+        self.refresh_all_pot_statuses()
         for w in self.pot_wrappers:
             w.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
             
@@ -611,9 +698,11 @@ class KitchenApp(QWidget):
                 self.refresh_pot_label(i)
                 if self.pot_times[i] == 0:
                     self.pot_states[i] = "대기"
+                    self.pot_confirmed[i] = False
                     self.timer_buttons[i].setIcon(self.get_icon("21_play.png"))
                     self.timer_buttons[i].setStyleSheet("background-color: #D5BDAF; border-radius: 16px; border: none;")
 
+                    self.refresh_pot_status(i)
     def refresh_pot_label(self, idx):
         """특정 화구의 타이머 텍스트를 mm:ss 형식으로 갱신하는 메서드"""
         t = self.pot_times[idx]
@@ -768,9 +857,32 @@ class KitchenApp(QWidget):
     # 연기 감지 핸들러
     # ==========================================
     def on_smoke_detected(self, conf: float):
-        # print(f"[SMOKE] 연기 감지! 신뢰도: {conf:.0%}")
-        self._play_alarm()
-        self._alarm_timer.start()
+        # 연기가 다시 감지되면 연속 미감지 카운트 초기화
+        self._clear_count = 0
+        self._ui_smoke_active = True
+        self._latest_smoke_conf = conf
+
+        print(f"[SMOKE] 연기 감지 신뢰도: {conf:.0%}")
+
+
+        # 사용자가 경보를 끈 상태라면, 끈 시점보다 15%p 이상 높아질 때만 재경보
+        if self._alarm_silenced:
+            print(
+                f"[재경보 확인] 현재 신뢰도: {conf:.0%} / "
+                f"재경보 기준: {self._silenced_conf + 0.15:.0%}"
+            )
+
+            if conf < self._silenced_conf + 0.15:
+                return
+
+            print("[재경보 발생] 신뢰도가 15%p 이상 상승함")
+
+            self._alarm_silenced = False
+            self.btn_alert_off.setText(" 경보 끄기")
+        # 이미 반복 경보가 작동 중이면 다시 시작하지 않음
+        if not self._alarm_timer.isActive():
+            self._play_alarm()
+            self._alarm_timer.start()
 
         #화재 알림 팝업창#
 
@@ -807,10 +919,42 @@ class KitchenApp(QWidget):
             
             self.smoke_dialog.exec()
 
-    def on_smoke_cleared(self):
-        # print("[SMOKE] 연기 사라짐 — 경고 해제")
+    def stop_alarm(self):
+        """현재 경보를 끄고, 끈 시점의 신뢰도를 저장합니다."""
+        self._alarm_silenced = True
+        self._silenced_conf = self._latest_smoke_conf
+
+        print(f"[경보 끄기] 기준 신뢰도: {self._silenced_conf:.0%}")
+
         self._alarm_timer.stop()
-        # 🟢 연기가 사라지면 팝업도 자동으로 닫기
+        self.btn_alert_off.setText(" 경보 꺼짐")
+
+        if self.smoke_dialog and self.smoke_dialog.isVisible():
+            self.smoke_dialog.close()
+
+   
+
+    def on_smoke_cleared(self):
+        """설정된 횟수만큼 연속 미감지되면 연기가 사라졌다고 확정합니다."""
+        if not self._ui_smoke_active:
+            return
+
+        self._clear_count += 1
+
+        if self._clear_count < self._clear_confirm_count:
+            return
+        
+        print(f"[상태 초기화] {self._clear_confirm_count} 연속 연기 미감지")
+
+
+        self._ui_smoke_active = False
+        self._clear_count = 0
+
+        self._alarm_timer.stop()
+        self._alarm_silenced = False
+        self._silenced_conf = 0.0
+        self.btn_alert_off.setText(" 경보 끄기")
+
         if self.smoke_dialog and self.smoke_dialog.isVisible():
             self.smoke_dialog.close()
 
@@ -861,8 +1005,20 @@ class KitchenApp(QWidget):
                     frame, gestures = self.gesture_controller.process(frame)
                     if gestures:
                         current_gesture = gestures[0]["gesture"].upper()
-                        self.lbl_gesture.setText(current_gesture)
-                except Exception as e:
+                        self.lbl_gesture.setText(current_gesture) 
+                        # 스냅 보강 (숫자 제스처 인식 시 해당 화구 포커스 연동)
+                    if gestures and self.gesture_controller.input_mode=='POT_SELECT': #오작동 방지를 위해 화구 선택 모드일때만 작동하도록함
+                        #손이 비어 있는지 아닌지 검사후 넘어감!!!
+                        gesture_name = gestures[0]["gesture"]
+                        if gesture_name == "one":
+                            self.select_burner(1)
+                        elif gesture_name == "two":
+                            self.select_burner(2)
+                        elif gesture_name == "three":
+                            self.select_burner(3)
+                        elif gesture_name == "four":
+                            self.select_burner(4)
+                except Exception as e: 
                     print(f"[KitchenApp] 제스처 처리 중 오류 발생: {e}")
                     import traceback  #에러 추론 위해 추가!!!
                     traceback.print_exc
