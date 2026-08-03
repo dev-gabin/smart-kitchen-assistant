@@ -18,3 +18,8 @@ roboflow
 mediapipe==0.10.14
 
 PySide6
+
+#  음성
+SpeechRecognition>=3.10.0
+pyttsx3>=2.90
+PyAudio>=0.2.14
