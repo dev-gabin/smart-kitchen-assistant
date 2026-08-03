@@ -873,18 +873,16 @@ class KitchenApp(QWidget):
 
         # 사용자가 경보를 끈 상태라면, 끈 시점보다 15%p 이상 높아질 때만 재경보
         if self._alarm_silenced:
-            print(
-                f"[재경보 확인] 현재 신뢰도: {conf:.0%} / "
-                f"재경보 기준: {self._silenced_conf + 0.15:.0%}"
-            )
 
-            if conf < self._silenced_conf + 0.15:
-                return
-
-            print("[재경보 발생] 신뢰도가 15%p 이상 상승함")
+            if conf < self._silenced_conf + 0.4:
+                return 
+            
+            # 40%p 이상 올랐을 때만 딱 한 번 아래 프롬프트 출력하고 경보 다시 켬
+            print(f"[재경보 발생] 신뢰도가 40%p 이상 상승함! (현재: {conf:.0%} / 기준: {self._silenced_conf + 0.4:.0%})")
 
             self._alarm_silenced = False
             self.btn_alert_off.setText(" 경보 끄기")
+                
         # 이미 반복 경보가 작동 중이면 다시 시작하지 않음
         if not self._alarm_timer.isActive():
             self._play_alarm()
@@ -913,7 +911,7 @@ class KitchenApp(QWidget):
             btn_alarm_off.setIcon(self.get_icon("bell.png"))
             btn_alarm_off.setFixedHeight(45)
             btn_alarm_off.setStyleSheet("background-color: #FFFFFF; border: 1px solid #F5CDCD; color: #B23B3B; font-weight: bold; border-radius: 12px;")
-            btn_alarm_off.clicked.connect(lambda: [self._alarm_timer.stop(), self.btn_alert_off.setText(" 경보 꺼짐")])
+            btn_alarm_off.clicked.connect(self.stop_alarm)
 
             btn_confirm = QPushButton("확인")
             btn_confirm.setFixedHeight(45)
