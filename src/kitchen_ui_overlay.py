@@ -12,15 +12,15 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QSizePolicy, QFrame, QScrollArea
 )
 from src.gesture import GestureController
-from src.smoke import SmokeDetector
+from src.burner import SmokeDetector, draw_smoke_boxes, detect_pans, PanTracker, draw_pans
 
 class KitchenApp(QWidget):
     def __init__(self):
         super().__init__()
 
         self.smoke_dialog = QDialog(self)
-        self.video_source=0 #모드 설정
-        # self.video_source="data/smoke5.mp4"
+        # self.video_source=0 #모드 설정
+        self.video_source="data/pots.mp4"
         # 웹캠 및 제스처 컨트롤러 초기화
         self.cap = None
         self.gesture_controller = GestureController()
@@ -29,18 +29,25 @@ class KitchenApp(QWidget):
         self.gesture_controller.swipe_detected.connect(self.on_snap_swipe)
 
         # 2) SmokeDetector 생성 및 시그널 연결
-        self.smoke_detector = SmokeDetector()
-        self.smoke_detector.smoke_detected.connect(self.on_smoke_detected)
-        self.smoke_detector.smoke_cleared.connect(self.on_smoke_cleared)
+        # YOLO 모델 로딩이 무거워서(수 초 소요) __init__에서 바로 만들면 창이 뜨기도 전에 멈춰버림.
+        # 창이 먼저 보이도록 이벤트 루프가 돌기 시작한 직후(0ms 뒤)로 로딩을 미룸.
+        self.smoke_detector = None
+        QTimer.singleShot(0, self._init_smoke_detector)
 
         # 경고음 반복 타이머 (2초 간격)
         self._alarm_timer = QTimer(self)
         self._alarm_timer.setInterval(2000)
         self._alarm_timer.timeout.connect(self._play_alarm)
 
-        # 연기 감지는 매 5프레임마다 실행 (성능 최적화)
         self._smoke_frame_count = 0
+        self._smoke_box_cache = []
         self.somoke_dialog=None #팝업창 변수
+
+        # 화구 위 팬 감지 캐시 (5프레임마다 한 번만 다시 탐지하고, 그 사이엔 캐시된 결과를 그림)
+        self._pan_tracker = PanTracker()
+        self._pan_cache = []
+        self._pan_detect_interval = 5
+        self._pan_frame_count = 0
 
 
         self.is_mini_mode = False
@@ -646,6 +653,20 @@ class KitchenApp(QWidget):
         screen = self.screen().geometry()
         self.move(screen.width() + screen.x() - self.width() - 20, screen.height() + screen.y() - self.height() - 20)
 
+    def _force_to_front(self):
+        """
+        다른 창(브라우저 등)이 OS 포그라운드를 쥐고 있으면 raise_()/activateWindow()가
+        내부적으로 쓰는 SetForegroundWindow가 Windows에 의해 막혀서 조용히 실패함.
+        WindowStaysOnTopHint를 잠깐 켰다 끄면 SetWindowPos(HWND_TOPMOST)가 호출되는데,
+        이건 포그라운드 권한 없이도 항상 허용되므로 이 방법으로 강제로 맨 위로 끌어올림.
+        """
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
+        self.show()
+
     def on_snap_swipe(self):
         """전체 대시보드 화면 ↔ 우측 하단 고정 미니 위젯 모드 간의 전환을 수행하는 메서드"""
         screen = self.screen().geometry()
@@ -691,6 +712,8 @@ class KitchenApp(QWidget):
             else:
                 self.update_mini_mode_layout()
             self.show()
+            self.raise_()
+            self.activateWindow()
         else:
             # [대시보드 복구] 실행 시작 당시의 정상 창 플래그 및 스타일 완벽 복원
             self.setWindowFlags(self.normal_window_flags)
@@ -722,7 +745,8 @@ class KitchenApp(QWidget):
                 w.show()
                 w.setStyleSheet("background-color: #FFFDF9; border: 2px solid #8C6D53; border-radius: 16px;" if self.selected_pot == (i + 1) else "background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
             
-            self.show(); self.raise_(); self.activateWindow(); self.is_mini_mode = False ##대시보드로 돌아 올때 제스처 조작 락 해제!
+            self._force_to_front()
+            self.is_mini_mode = False ##대시보드로 돌아 올때 제스처 조작 락 해제!
             self.gesture_controller.is_mini_mode=False
 
     def mouseDoubleClickEvent(self, event):
@@ -781,6 +805,12 @@ class KitchenApp(QWidget):
         if self.smoke_dialog and self.smoke_dialog.isVisible():
             self.smoke_dialog.close()
 
+    def _init_smoke_detector(self):
+        """무거운 YOLO 모델 로딩을 창이 뜬 뒤로 미루는 지연 초기화 메서드 (시작 시 멈춤 방지용)"""
+        self.smoke_detector = SmokeDetector()
+        self.smoke_detector.smoke_detected.connect(self.on_smoke_detected)
+        self.smoke_detector.smoke_cleared.connect(self.on_smoke_cleared)
+
     def _play_alarm(self):
         """별도 스레드에서 경고음 재생 (UI 블로킹 방지)"""
         def _beep():
@@ -812,10 +842,20 @@ class KitchenApp(QWidget):
                     import traceback  #에러 추론 위해 추가!!!
                     traceback.print_exc
 
-                # 연기 감지 (매 5프레임마다 추론)
+                # 화구 위 프라이팬/조리도구 가장자리 감지 및 붉은색 표시
+                # (5프레임마다만 다시 탐지 + 최근 감지 이력으로 확인된 것만 그려서 오탐 억제)
+                try:
+                    self._pan_frame_count += 1
+                    if self._pan_frame_count % self._pan_detect_interval == 0:
+                        raw_pans = detect_pans(frame)
+                        self._pan_cache = self._pan_tracker.update(raw_pans)
+                    frame = draw_pans(frame, self._pan_cache)
+                except Exception as e:
+                    print(f"[KitchenApp] 화구/팬 감지 중 오류 발생: {e}")
+
                 self._smoke_frame_count += 1
-                if self._smoke_frame_count % 5 == 0:
-                    frame, is_smoke, conf = self.smoke_detector.process(frame)
+                if self.smoke_detector is not None and self._smoke_frame_count % 5 == 0:
+                    is_smoke, conf, self._smoke_box_cache = self.smoke_detector.detect(frame)
                     if is_smoke:
                         self.lbl_smoke.setText(f"Smoke: ⚠️ DETECTED ({conf:.0%})")
                         self.lbl_smoke.setStyleSheet(
@@ -829,6 +869,7 @@ class KitchenApp(QWidget):
                         self.lbl_smoke.setStyleSheet("")
                         # 🟢 연기가 사라졌을 때 팝업 창과 알람을 해제하는 함수 호출!
                         self.on_smoke_cleared()
+                frame = draw_smoke_boxes(frame, self._smoke_box_cache)
 
                 # 렌더링 처리
                 rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
