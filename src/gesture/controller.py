@@ -52,7 +52,7 @@ class GestureController(QObject):
         # ⏱️ 동작별 연타 방지 쿨다운 타이머 설정
         self.cooldown_sec = 1.0           # 기본 제스처 쿨다운 (콤보/스와이프 등 1~4 선택 외의 동작에 사용)
         self.pot_select_hold_sec = 1.5    # 1~4 제스처를 이만큼 유지해야 해당 화구가 선택됨
-        self.time_add_cooldown_sec = 0.4  # 5(보)/주먹을 계속 유지할 때 10초씩 증감되는 반복 간격
+        self.time_add_cooldown_sec = 0.6  # 5(보)/주먹을 계속 유지할 때 10초씩 증감되는 반복 간격
 
         self.last_action_time = 0
         self.last_time_add_action = 0
@@ -353,7 +353,7 @@ class GestureController(QObject):
                 # TODO:: 확인 후 제거할 것
             if is_snap:
                 self.swipe_detected.emit()
-                pyautogui.hotkey('alt', 'esc')  # 손을 옆으로 휙 스냅하면 Alt+Esc 실행
+                # pyautogui.hotkey('alt', 'esc')  # 손을 옆으로 휙 스냅하면 Alt+Esc 실행
                 self.last_swipe_time = curr_time
                 self._swipe_history.clear()
         except Exception as e:
