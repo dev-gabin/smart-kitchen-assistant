@@ -76,7 +76,7 @@ class KitchenApp(QWidget):
         """메인 GUI 레이아웃 및 스타일을 초기화하는 메서드"""
         self.setWindowTitle("Smart Kitchen Assistant")
         self.setWindowIcon(QIcon(os.path.join("img", "01_chef_hat.png")))
-        self.resize(1150, 750) # hi
+        self.resize(1150, 750) 
         self.setMinimumSize(0, 0)
         
         # 따뜻하고 노란끼 감도는 바닐라 크림 테마 전역 스타일 적용
@@ -868,23 +868,21 @@ class KitchenApp(QWidget):
         self._ui_smoke_active = True
         self._latest_smoke_conf = conf
 
-        print(f"[SMOKE] 연기 감지 신뢰도: {conf:.0%}")
+        # print(f"[SMOKE] 연기 감지 신뢰도: {conf:.0%}")
 
 
         # 사용자가 경보를 끈 상태라면, 끈 시점보다 15%p 이상 높아질 때만 재경보
         if self._alarm_silenced:
-            print(
-                f"[재경보 확인] 현재 신뢰도: {conf:.0%} / "
-                f"재경보 기준: {self._silenced_conf + 0.15:.0%}"
-            )
 
-            if conf < self._silenced_conf + 0.15:
-                return
-
-            print("[재경보 발생] 신뢰도가 15%p 이상 상승함")
+            if conf < self._silenced_conf + 0.4:
+                return 
+            
+            # 40%p 이상 올랐을 때만 딱 한 번 아래 프롬프트 출력하고 경보 다시 켬
+            print(f"[재경보 발생] 신뢰도가 40%p 이상 상승함! (현재: {conf:.0%} / 기준: {self._silenced_conf + 0.4:.0%})")
 
             self._alarm_silenced = False
             self.btn_alert_off.setText(" 경보 끄기")
+                
         # 이미 반복 경보가 작동 중이면 다시 시작하지 않음
         if not self._alarm_timer.isActive():
             self._play_alarm()
@@ -892,37 +890,39 @@ class KitchenApp(QWidget):
 
         #화재 알림 팝업창#
 
-        if not self.smoke_dialog or not self.smoke_dialog.isVisible():
-
+        # 다이얼로그는 최초 1회만 만들어서 재사용 (매번 새로 만들면 위젯이 계속 겹쳐 쌓임)
+        if self.smoke_dialog is None:
+            self.smoke_dialog = QDialog(self)
             self.smoke_dialog.setWindowTitle("화재 주의 경고")
             self.smoke_dialog.setFixedSize(520, 260)
             self.smoke_dialog.setStyleSheet("background-color: #FDF9F3; border-radius: 16px;")
-            
+
             dialog_layout = QVBoxLayout(self.smoke_dialog)
             dialog_layout.setContentsMargins(25, 25, 25, 25)
-            
+
             lbl_warn = QLabel("⚠️\n\n연기가 감지되었습니다!\n화재 위험이 감지되었습니다. 환기를 권장합니다.")
             lbl_warn.setAlignment(Qt.AlignCenter)
             lbl_warn.setStyleSheet("font-size: 15px; font-weight: bold; color: #B23B3B; border: none;")
             dialog_layout.addWidget(lbl_warn)
-            
+
             btn_layout = QHBoxLayout()
-            
+
             btn_alarm_off = QPushButton("경보 끄기")
             btn_alarm_off.setIcon(self.get_icon("bell.png"))
             btn_alarm_off.setFixedHeight(45)
             btn_alarm_off.setStyleSheet("background-color: #FFFFFF; border: 1px solid #F5CDCD; color: #B23B3B; font-weight: bold; border-radius: 12px;")
-            btn_alarm_off.clicked.connect(lambda: [self._alarm_timer.stop(), self.btn_alert_off.setText(" 경보 꺼짐")])
-            
+            btn_alarm_off.clicked.connect(self.stop_alarm)
+
             btn_confirm = QPushButton("확인")
             btn_confirm.setFixedHeight(45)
             btn_confirm.setStyleSheet("background-color: #3E3832; color: white; font-weight: bold; border-radius: 12px;")
             btn_confirm.clicked.connect(self.smoke_dialog.close)
-            
+
             btn_layout.addWidget(btn_alarm_off)
             btn_layout.addWidget(btn_confirm)
             dialog_layout.addLayout(btn_layout)
-            
+
+        if not self.smoke_dialog.isVisible():
             self.smoke_dialog.exec()
 
     def stop_alarm(self):
