@@ -76,7 +76,7 @@ class KitchenApp(QWidget):
         """메인 GUI 레이아웃 및 스타일을 초기화하는 메서드"""
         self.setWindowTitle("Smart Kitchen Assistant")
         self.setWindowIcon(QIcon(os.path.join("img", "01_chef_hat.png")))
-        self.resize(1150, 750) 
+        self.resize(1150, 750) # hi
         self.setMinimumSize(0, 0)
         
         # 따뜻하고 노란끼 감도는 바닐라 크림 테마 전역 스타일 적용
