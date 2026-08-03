@@ -27,7 +27,7 @@ class KitchenApp(QWidget):
         self.gesture_controller = GestureController()
         
         # 제스처 스와이프 시그널 연결 (위젯 모드 토글 연동)
-        # self.gesture_controller.swipe_detected.connect(self.on_snap_swipe)
+        self.gesture_controller.swipe_detected.connect(self.on_snap_swipe)
 
         # 2) SmokeDetector 생성 및 시그널 연결
         # YOLO 모델 로딩이 무거워서(수 초 소요) __init__에서 바로 만들면 창이 뜨기도 전에 멈춰버림.
@@ -166,7 +166,7 @@ class KitchenApp(QWidget):
         self.btn_widget = QPushButton(" 위젯 모드")
         self.btn_widget.setIcon(self.get_icon("widget.png"))
         self.btn_widget.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 12px; font-weight: bold; color: #594A42; padding: 8px 12px;")
-        # self.btn_widget.clicked.connect(self.on_snap_swipe)
+        self.btn_widget.clicked.connect(self.on_snap_swipe)
 
         
         widget_layout.addWidget(self.btn_widget)
@@ -537,10 +537,6 @@ class KitchenApp(QWidget):
         
         self.lbl_selected.setText(f"0{num} [시간 설정 중]")
         self.refresh_all_pot_statuses() #4개 화구의 상태 글씨를 한꺼번에 다시 표시하는 함수
-        
-        # 미니모드 중에 숨겨져 있던 화구를 제스처로 선택하면 즉시 뿅! 나타나게 갱신
-        if self.is_mini_mode:
-            self.update_mini_mode_layout()
 
     def deselect_burner(self):
         """화면에 화구 선택 제스처(1~4)가 없어서 선택이 풀렸을 때, 대시보드의 선택 표시를 초기화하는 메서드"""
@@ -638,9 +634,6 @@ class KitchenApp(QWidget):
             for w in self.pot_wrappers:
                 w.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
                 
-            # 미니모드일 경우 초기화된 화구를 화면에서 즉시 쏙! 지우고 창을 줄임
-            if self.is_mini_mode:
-                self.update_mini_mode_layout()
 
     def toggle_all_timers(self):
         """모든 화구의 타이머를 일괄 정지 또는 재개하는 메서드 (전체 정지/재생 버튼용 토글)"""
@@ -691,12 +684,7 @@ class KitchenApp(QWidget):
         self.lbl_selected.setText("-")
         self.refresh_all_pot_statuses()
         for w in self.pot_wrappers:
-            w.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
-            
-        # 미니모드일 경우 전체 화구가 사라지고 기본값만 남도록 동적 업데이트
-        if self.is_mini_mode:
-            self.update_mini_mode_layout()
-
+            w.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")      
     def update_countdowns(self):
         """1초마다 실행되며 작동 중인 타이머의 남은 시간을 깎아주는 카운트다운 메서드"""
         for i in range(4):
@@ -767,20 +755,6 @@ class KitchenApp(QWidget):
                 # 💡 조건에 안 맞으면(초기화돼서 00:00이고 포커스도 풀렸으면) 가차없이 스르륵 숨김!
                 self.pot_wrappers[i].hide() 
         
-        # 만약 초기화하다가 전부 싹 다 지워져서 텅 비면 흉하니까 기본 화구 1개 띄워둠
-        if active_timers == 0:
-            self.pot_wrappers[0].show()
-            self.pot_wrappers[0].setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
-            active_timers = 1
-        
-        # 표시되는 타이머 개수에 맞춰 미니모드 창 높이 동적 줄임/늘림
-        target_height = (active_timers * 75) + ((active_timers - 1) * 5) + 12
-        self.setMinimumSize(0, 0)
-        self.setMaximumSize(16777215, 16777215)
-        
-        # 컴팩트하고 예쁜 280px 너비로 고정
-        self.setFixedSize(280, target_height)
-        
         # 창 크기가 변하더라도 무조건 우측 하단 구석 자리를 사수하도록 위치 재보정
         screen = self.screen().geometry()
         self.move(screen.width() + screen.x() - self.width() - 20, screen.height() + screen.y() - self.height() - 20)
@@ -801,93 +775,92 @@ class KitchenApp(QWidget):
         self.raise_()
         self.activateWindow()
 
-    # def on_snap_swipe(self):
-    #     """전체 대시보드 화면 ↔ 우측 하단 고정 미니 위젯 모드 간의 전환을 수행하는 메서드"""
-    #     screen = self.screen().geometry()
+    def on_snap_swipe(self):
+        """전체 대시보드 화면 ↔ 우측 하단 고정 미니 위젯 모드 간의 전환을 수행하는 메서드"""
+        screen = self.screen().geometry()
         
-    #     # 최대화 상태일 때 정상 크기로 되돌림
-    #     if self.isMaximized():
-    #         self.showNormal()
+        # 최대화 상태일 때 정상 크기로 되돌림
+        if self.isMaximized():
+            self.showNormal()
 
-    #     self.hide()
+        self.hide()
         
-    #     if not self.is_mini_mode:
-    #         # [미니모드 진입] 프레임리스 창 및 최상단 고정 설정
-    #         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-    #         self.cam_frame.hide(); self.status_frame.hide(); self.control_frame.hide(); self.header_frame.hide(); self.t_header_frame.hide()
-    #         self.image_label.setMinimumSize(0, 0)
-    #         self.main_layout.setContentsMargins(0, 0, 0, 0); self.main_layout.setSpacing(0)
-    #         self.content_layout.setContentsMargins(0, 0, 0, 0); self.content_layout.setSpacing(0)
-    #         self.middle_layout.setContentsMargins(0, 0, 0, 0); self.middle_layout.setSpacing(0)
+        if not self.is_mini_mode:
+            # [미니모드 진입] 프레임리스 창 및 최상단 고정 설정
+            self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+            self.cam_frame.hide(); self.status_frame.hide(); self.control_frame.hide(); self.header_frame.hide(); self.t_header_frame.hide()
+            self.image_label.setMinimumSize(0, 0)
+            self.main_layout.setContentsMargins(0, 0, 0, 0); self.main_layout.setSpacing(0)
+            self.content_layout.setContentsMargins(0, 0, 0, 0); self.content_layout.setSpacing(0)
+            self.middle_layout.setContentsMargins(0, 0, 0, 0); self.middle_layout.setSpacing(0)
             
             
-    #         # 타이머 컨테이너가 좁은 창 안에서도 여백을 덜 차지하게 싹 줄임
-    #         self.timer_layout.setContentsMargins(5, 5, 5, 5)
-    #         self.timer_layout.setSpacing(5)
+            # 타이머 컨테이너가 좁은 창 안에서도 여백을 덜 차지하게 싹 줄임
+            self.timer_layout.setContentsMargins(5, 5, 5, 5)
+            self.timer_layout.setSpacing(5)
             
-    #         self.timer_frame.setStyleSheet("background-color: #FFFFFF; border: 1.5px solid #EAE0D5; border-radius: 20px;")
+            self.timer_frame.setStyleSheet("background-color: #FFFFFF; border: 1.5px solid #EAE0D5; border-radius: 20px;")
             
-    #         self.is_mini_mode = True # 플래그를 미리 켜야 동적 업데이트 메서드가 동작함
-    #         self.gesture_controller.is_mini_mode=True #미니모드 진입 시 스와이프 제외 손동작 인식 차단!
-    #         if self.first_mini_entry:
-    #            self.first_mini_entry = False
-            
-    #         # 어떤 타이머도 작동 안 하고 설정된 시간(초)도 모두 0일 때만 4개 다 표시
-    #         all_inactive = all(t == 0 and s == "대기" for t, s in zip(self.pot_times, self.pot_states))
-    #         if all_inactive:
-    #             active_timers = 4
-    #             for i in range(4):
-    #                 self.pot_wrappers[i].show()
-    #                 self.pot_wrappers[i].setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
-    #             target_height = (active_timers * 75) + ((active_timers - 1) * 5) + 12
-    #             self.setMinimumSize(0, 0); self.setMaximumSize(16777215, 16777215)
-    #             self.setFixedSize(280, target_height) 
-    #             self.move(screen.width() + screen.x() - self.width() - 20, screen.height() + screen.y() - self.height() - 20)
-    #         else:
-    #             self.update_mini_mode_layout()
-    #         self.show()
-    #         self.raise_()
-    #         self.activateWindow()
-    #     else:
-    #         # [대시보드 복구] 실행 시작 당시의 정상 창 플래그 및 스타일 완벽 복원
-    #         self.setWindowFlags(self.normal_window_flags)
-    #         self.setStyleSheet("""
-    #             QWidget { 
-    #                 background-color: #FDF9F3; 
-    #                 color: #3E3832; 
-    #                 font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; 
-    #             }
-    #         """)
-            
-    #         self.image_label.setMinimumSize(540, 310)
-    #         self.main_layout.setContentsMargins(15, 15, 15, 15); self.main_layout.setSpacing(20)
-    #         self.content_layout.setContentsMargins(0, 0, 0, 0); self.content_layout.setSpacing(15)
-    #         self.middle_layout.setContentsMargins(0, 0, 0, 0); self.middle_layout.setSpacing(15)
-            
-    #         # 대시보드 모드로 돌아올 때 타이머 여백 넉넉하게 원복
-    #         self.timer_layout.setContentsMargins(15, 15, 15, 15)
-    #         self.timer_layout.setSpacing(10)
-            
-    #         # 일반 대시보드 모드로 돌아올 때 창 크기 고정 해제 및 원복
-    #         self.setMinimumSize(1150, 750); self.setMaximumSize(16777215, 16777215); self.resize(1150, 750)
-    #         self.move(screen.x() + (screen.width() - 1150) // 2, screen.y() + (screen.height() - 750) // 2)
-    #         #sidebar 없는데 불러오려 해서오류나서 지움
-    #         self.cam_frame.show(); self.status_frame.show(); self.control_frame.show(); self.header_frame.show(); self.t_header_frame.show()
-    #         self.timer_frame.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 20px;")
-            
-    #         for i, w in enumerate(self.pot_wrappers):
-    #             w.show()
-    #             w.setStyleSheet("background-color: #FFFDF9; border: 2px solid #8C6D53; border-radius: 16px;" if self.selected_pot == (i + 1) else "background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
-            
-    #         self._force_to_front()
-    #         self.is_mini_mode = False ##대시보드로 돌아 올때 제스처 조작 락 해제!
-    #         self.gesture_controller.is_mini_mode=False
+            self.is_mini_mode = True # 플래그를 미리 켜야 동적 업데이트 메서드가 동작함
+            self.gesture_controller.is_mini_mode=True #미니모드 진입 시 스와이프 제외 손동작 인식 차단!
+            if self.first_mini_entry:
+               self.first_mini_entry = False
 
-    # def mouseDoubleClickEvent(self, event):
-    #     """미니모드 창을 더블클릭했을 때 대시보드로 즉시 복구해주는 이벤트 핸들러"""
-    #     if self.is_mini_mode and event.button() == Qt.LeftButton:
-    #         self.on_snap_swipe()
-    #         event.accept()
+            # 미니모드에서는 화구 활성 여부와 상관없이 4개 타이머를 항상 전부 표시
+            for i, w in enumerate(self.pot_wrappers):
+                w.show()
+                w.setStyleSheet("background-color: #FFFDF9; border: 2px solid #8C6D53; border-radius: 16px;" if self.selected_pot == (i + 1) else "background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
+
+            active_timers = 4
+            target_height = (active_timers * 75) + ((active_timers - 1) * 5) + 12
+            self.setMinimumSize(0, 0); self.setMaximumSize(16777215, 16777215)
+            self.setFixedSize(280, target_height)
+            self.move(screen.width() + screen.x() - self.width() - 20, screen.height() + screen.y() - self.height() - 20)
+
+            self.show()
+            self.raise_()
+            self.activateWindow()
+
+        else:
+            # [대시보드 복구] 실행 시작 당시의 정상 창 플래그 및 스타일 완벽 복원
+            self.setWindowFlags(self.normal_window_flags)
+            self.setStyleSheet("""
+                QWidget { 
+                    background-color: #FDF9F3; 
+                    color: #3E3832; 
+                    font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; 
+                }
+            """)
+            
+            self.image_label.setMinimumSize(540, 310)
+            self.main_layout.setContentsMargins(15, 15, 15, 15); self.main_layout.setSpacing(20)
+            self.content_layout.setContentsMargins(0, 0, 0, 0); self.content_layout.setSpacing(15)
+            self.middle_layout.setContentsMargins(0, 0, 0, 0); self.middle_layout.setSpacing(15)
+            
+            # 대시보드 모드로 돌아올 때 타이머 여백 넉넉하게 원복
+            self.timer_layout.setContentsMargins(15, 15, 15, 15)
+            self.timer_layout.setSpacing(10)
+            
+            # 일반 대시보드 모드로 돌아올 때 창 크기 고정 해제 및 원복
+            self.setMinimumSize(1150, 750); self.setMaximumSize(16777215, 16777215); self.resize(1150, 750)
+            self.move(screen.x() + (screen.width() - 1150) // 2, screen.y() + (screen.height() - 750) // 2)
+            #sidebar 없는데 불러오려 해서오류나서 지움
+            self.cam_frame.show(); self.status_frame.show(); self.control_frame.show(); self.header_frame.show(); self.t_header_frame.show()
+            self.timer_frame.setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 20px;")
+            
+            for i, w in enumerate(self.pot_wrappers):
+                w.show()
+                w.setStyleSheet("background-color: #FFFDF9; border: 2px solid #8C6D53; border-radius: 16px;" if self.selected_pot == (i + 1) else "background-color: #FFFFFF; border: 1px solid #EAE0D5; border-radius: 16px;")
+            
+            self._force_to_front()
+            self.is_mini_mode = False ##대시보드로 돌아 올때 제스처 조작 락 해제!
+            self.gesture_controller.is_mini_mode=False
+
+    def mouseDoubleClickEvent(self, event):
+        """미니모드 창을 더블클릭했을 때 대시보드로 즉시 복구해주는 이벤트 핸들러"""
+        if self.is_mini_mode and event.button() == Qt.LeftButton:
+            self.on_snap_swipe()
+            event.accept()
 
     # ==========================================
     # 연기 감지 핸들러
@@ -1039,6 +1012,7 @@ class KitchenApp(QWidget):
         if self.cap and self.cap.isOpened():
             ret, frame = self.cap.read()
             if ret:
+                frame = cv2.flip(frame, 1)  # 웹캠 화면 좌우 반전 (거울처럼 보이도록)
                 try:
                     frame, gestures = self.gesture_controller.process(frame)
                     if gestures:

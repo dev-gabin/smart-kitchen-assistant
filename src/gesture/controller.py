@@ -52,7 +52,7 @@ class GestureController(QObject):
         # ⏱️ 동작별 연타 방지 쿨다운 타이머 설정
         self.cooldown_sec = 1.0           # 기본 제스처 쿨다운 (콤보/스와이프 등 1~4 선택 외의 동작에 사용)
         self.pot_select_hold_sec = 1.5    # 1~4 제스처를 이만큼 유지해야 해당 화구가 선택됨
-        self.time_add_cooldown_sec = 0.4  # 5(보)/주먹을 계속 유지할 때 10초씩 증감되는 반복 간격
+        self.time_add_cooldown_sec = 0.6  # 5(보)/주먹을 계속 유지할 때 10초씩 증감되는 반복 간격
 
         self.last_action_time = 0
         self.last_time_add_action = 0
@@ -153,10 +153,10 @@ class GestureController(QObject):
             return frame, gestures
 
         # # 🟢 [미니모드 완벽 차단] 대시보드로 돌아가는 스와이프만 허용하고, 타이머/화구 조작 등 모든 제스처는 완전 무시!
-        # if self.is_mini_mode:
-        #     if results.multi_hand_landmarks and len(results.multi_hand_landmarks) == 1:
-        #         self._handle_snap_swipe(results.multi_hand_landmarks[0])
-        #     return frame, gestures
+        if self.is_mini_mode:
+            if results.multi_hand_landmarks and len(results.multi_hand_landmarks) == 1:
+                self._handle_snap_swipe(results.multi_hand_landmarks[0])
+            return frame, gestures
 
         
 
@@ -208,14 +208,14 @@ class GestureController(QObject):
                             self.last_action_time = curr_time
 
             # 스냅 스와이프(위젯 모드 전환) 감지 로직
-            # if len(results.multi_hand_landmarks) == 1:
-            #     wrist_x = results.multi_hand_landmarks[0].landmark[0].x
-            #     if wrist_x < 0.3:
-            #         self._swipe_history.clear()
-            #     else:
-            #         self._handle_snap_swipe(results.multi_hand_landmarks[0])
-            # else:
-            #     self._swipe_history.clear()
+            if len(results.multi_hand_landmarks) == 1:
+                wrist_x = results.multi_hand_landmarks[0].landmark[0].x
+                if wrist_x < 0.3:
+                    self._swipe_history.clear()
+                else:
+                    self._handle_snap_swipe(results.multi_hand_landmarks[0])
+            else:
+                self._swipe_history.clear()
 
             curr_time = time.time()
 
@@ -319,42 +319,42 @@ class GestureController(QObject):
         text_pos = (center[0] - text_w // 2, center[1] + text_h // 2)
         cv2.putText(frame, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 1.6, (255, 255, 255), 4, cv2.LINE_AA)
 
-    # def _handle_snap_swipe(self, hand_landmarks):
-    #     """화면 밖으로 손을 밀어내는 스와이프 제스처(위젯 모드 전환) 감지 함수"""
-    #     fingertips = [hand_landmarks.landmark[i] for i in (8, 12, 16, 20)]
-    #     curr_x = sum(lm.x for lm in fingertips) / len(fingertips)
-    #     curr_y = sum(lm.y for lm in fingertips) / len(fingertips)
-    #     curr_time = time.time()
-    #     self._swipe_history.append((curr_time, curr_x, curr_y))
-    #     self._swipe_history = [(t, x, y) for t, x, y in self._swipe_history if curr_time - t <= self._swipe_window_sec]
+    def _handle_snap_swipe(self, hand_landmarks):
+        """화면 밖으로 손을 밀어내는 스와이프 제스처(위젯 모드 전환) 감지 함수"""
+        fingertips = [hand_landmarks.landmark[i] for i in (8, 12, 16, 20)]
+        curr_x = sum(lm.x for lm in fingertips) / len(fingertips)
+        curr_y = sum(lm.y for lm in fingertips) / len(fingertips)
+        curr_time = time.time()
+        self._swipe_history.append((curr_time, curr_x, curr_y))
+        self._swipe_history = [(t, x, y) for t, x, y in self._swipe_history if curr_time - t <= self._swipe_window_sec]
 
-    #     try:
-    #         if curr_time - self.last_swipe_time <= self.cooldown_sec: return
-    #         if len(self._swipe_history) < 2: return
-    #         oldest_time, oldest_x, oldest_y = self._swipe_history[0]
-    #         dt = curr_time - oldest_time
-    #         if dt <= 0: return
-    #         disp_x = curr_x - oldest_x
-    #         disp_y = curr_y - oldest_y
-    #         speed_x = disp_x / dt
-    #         speed_y = disp_y / dt
+        try:
+            if curr_time - self.last_swipe_time <= self.cooldown_sec: return
+            if len(self._swipe_history) < 2: return
+            oldest_time, oldest_x, oldest_y = self._swipe_history[0]
+            dt = curr_time - oldest_time
+            if dt <= 0: return
+            disp_x = curr_x - oldest_x
+            disp_y = curr_y - oldest_y
+            speed_x = disp_x / dt
+            speed_y = disp_y / dt
 
-    #         # 실측 [SNAP-DEBUG] 로그 기준으로 재조정
-    #         is_snap = (
-    #             abs(speed_x) > 0.28
-    #             and abs(disp_x) > 0.06
-    #             and abs(disp_y) < 0.15
-    #             and abs(speed_x) > abs(speed_y) * 1.8
-    #         )
+            # 실측 [SNAP-DEBUG] 로그 기준으로 재조정
+            is_snap = (
+                abs(speed_x) > 0.28
+                and abs(disp_x) > 0.06
+                and abs(disp_y) < 0.15
+                and abs(speed_x) > abs(speed_y) * 1.8
+            )
 
-    #         # 🔍 임계값에 근접했는데 통과 못 한 경우 콘솔에 실측치를 남겨서 실제 손동작에 맞게 재조정할 수 있게 함
-    #         if not is_snap and abs(speed_x) > 0.2:
-    #             print(f"[SNAP-DEBUG] speed_x={speed_x:.2f} disp_x={disp_x:.2f} disp_y={disp_y:.2f} speed_y={speed_y:.2f} dt={dt:.2f} samples={len(self._swipe_history)}")
-    #             # TODO:: 확인 후 제거할 것
-    #         if is_snap:
-    #             self.swipe_detected.emit()
-    #             pyautogui.hotkey('alt', 'esc')  # 손을 옆으로 휙 스냅하면 Alt+Esc 실행
-    #             self.last_swipe_time = curr_time
-    #             self._swipe_history.clear()
-    #     except Exception as e:
-    #         print(f"[GestureController] 스냅 처리 중 오류: {e}")
+            # 🔍 임계값에 근접했는데 통과 못 한 경우 콘솔에 실측치를 남겨서 실제 손동작에 맞게 재조정할 수 있게 함
+            if not is_snap and abs(speed_x) > 0.2:
+                print(f"[SNAP-DEBUG] speed_x={speed_x:.2f} disp_x={disp_x:.2f} disp_y={disp_y:.2f} speed_y={speed_y:.2f} dt={dt:.2f} samples={len(self._swipe_history)}")
+                # TODO:: 확인 후 제거할 것
+            if is_snap:
+                self.swipe_detected.emit()
+                # pyautogui.hotkey('alt', 'esc')  # 손을 옆으로 휙 스냅하면 Alt+Esc 실행
+                self.last_swipe_time = curr_time
+                self._swipe_history.clear()
+        except Exception as e:
+            print(f"[GestureController] 스냅 처리 중 오류: {e}")
