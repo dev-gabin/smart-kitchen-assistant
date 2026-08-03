@@ -19,14 +19,6 @@ class VoiceAssistant(threading.Thread):
         self.daemon = True  # 메인 프로그램 종료 시 같이 종료
         self._stop_flag = threading.Event()
 
-        # 💡 TTS 엔진(pyttsx3)은 여기서 만들지 않음.
-        # VoiceAssistant는 QTimer.singleShot으로 메인 스레드에서 생성되는데, 여기서 엔진을
-        # 만들면 SAPI5(COM) 엔진이 메인 스레드에 귀속됨. 정작 speak()는 run()이 도는
-        # 별도 스레드에서 호출되는데, Windows COM은 생성한 스레드가 아닌 다른 스레드에서
-        # 건드리면 예외 없이 조용히 무시돼서 콘솔에 텍스트만 찍히고 소리가 안 나는 원인이 됨.
-        # 그래서 실제로 speak()를 호출할 run() 스레드 안에서 초기화함.
-        self.engine = None
-
         # 음성 인식기 초기화
         self.recognizer = sr.Recognizer()
         self.recognizer.energy_threshold = 300  # 마이크 민감도 (조절 가능)
@@ -34,10 +26,14 @@ class VoiceAssistant(threading.Thread):
     def speak(self, text):
         """텍스트를 음성으로 읽어주기"""
         print(f"[Voice Assistant] : {text}")
-        if self.engine is None:
-            return
-        self.engine.say(text)
-        self.engine.runAndWait()
+        try:
+            engine = pyttsx3.init()
+            engine.setProperty('rate', 160)  # 말하는 속도
+            engine.say(text)
+            engine.runAndWait()
+            engine.stop()
+        except Exception as e:
+            print(f"[Voice Assistant] TTS 재생 실패 (텍스트만 출력됨): {e}")
 
     def stop(self):
         """음성 인식 루프 종료 요청"""
@@ -45,14 +41,6 @@ class VoiceAssistant(threading.Thread):
 
     def run(self):
         """음성 인식 루프"""
-        # speak()를 호출할 이 스레드 안에서 TTS 엔진을 초기화해야 Windows COM 문제가 없음
-        try:
-            self.engine = pyttsx3.init()
-            self.engine.setProperty('rate', 160)  # 말하는 속도
-        except Exception as e:
-            print(f"[Voice Assistant] TTS 엔진 초기화 실패 (음성 안내 없이 텍스트만 출력됨): {e}")
-            self.engine = None
-
         try:
             mic = sr.Microphone()
         except Exception as e:
