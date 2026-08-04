@@ -59,10 +59,12 @@ smart_kitchen_assistant/
 │   ├── gesture_controller.py  # [클래스] 손동작 추적 및 OS 조작 전담 모듈
 │   └── kitchen_ui_overlay.py  # [클래스] 대시보드 UI 및 경고 시각화 전담 모듈
 │
+├── .gitignore                 # Git 추척 제외 설정
 ├── train_smoke_model.py       # [실행] 연기 감지 모델 학습 스크립트
 ├── main.py                    # [실행] 메인 애플리케이션 엔트리 포인트
 ├── README.md                  # 프로젝트 설명
 └── requirements.txt           # 의존성 라이브러리 목록
+
 ```
 ## 데이터셋 안내
 
