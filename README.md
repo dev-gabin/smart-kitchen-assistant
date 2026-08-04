@@ -44,13 +44,13 @@
 smart_kitchen_assistant/
 |
 ├──assets/                     #UI 리소스
-|   └── raw_smoke_dataset/     #버튼 및 화면 아이콘  
+|   └── icons/                 #버튼 및 화면 아이콘  
 │
 ├── data/                      # 데이터 관리 폴더
-│   └── raw_smoke_dataset/     # Roboflow에서 다운받은 연기 데이터셋
+│   └── gesture_data.csv       # 손동작 학습 데이터
 │
 ├── models/                    # AI 모델 가중치 (.pt) 파일 관리
-│   ├── yolov8n-pose.pt        # 포즈 추정 경량 기본 모델
+│   ├── yolov8n.pt        # 포즈 추정 경량 기본 모델
 │   └── custom_smoke_best.pt   # 파인튜닝 완료된 연기 감지 모델
 │
 ├── src/                       # 핵심 소스코드 (OOP 모듈)
@@ -61,4 +61,12 @@ smart_kitchen_assistant/
 │
 ├── train_smoke_model.py       # [실행] 연기 감지 모델 학습 스크립트
 ├── main.py                    # [실행] 메인 애플리케이션 엔트리 포인트
+├── README.md                  # 프로젝트 설명
 └── requirements.txt           # 의존성 라이브러리 목록
+```
+## 데이터셋 안내
+
+연기 감지 모델 학습에 사용한 원본 이미지 데이터셋은 파일 용량 문제로  
+GitHub 저장소에 포함하지 않았습니다.
+
+원본 데이터는 로컬의 `data/raw_smoke_dataset/` 경로에서 관리했습니다.
