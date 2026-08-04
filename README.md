@@ -42,6 +42,9 @@
 
 ```text
 smart_kitchen_assistant/
+|
+├──assets/                     #UI 리소스
+|   └── raw_smoke_dataset/     #버튼 및 화면 아이콘  
 │
 ├── data/                      # 데이터 관리 폴더
 │   └── raw_smoke_dataset/     # Roboflow에서 다운받은 연기 데이터셋
