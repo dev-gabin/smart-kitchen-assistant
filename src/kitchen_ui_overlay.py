@@ -6,6 +6,7 @@ import threading
 import winsound
 import pyautogui
 
+from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QPixmap, QIcon, QPainter, QColor, QBrush, QImage
 from PySide6.QtWidgets import (
@@ -14,14 +15,15 @@ from PySide6.QtWidgets import (
 )
 from src.gesture import GestureController, VoiceAssistant
 from src.burner import SmokeDetector, draw_smoke_boxes
-
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ICON_DIR = PROJECT_ROOT / "assets" / "icons"
 class KitchenApp(QWidget):
     def __init__(self):
         super().__init__()
 
         self.smoke_dialog = None
         # self.video_source=0 #모드 설정
-        self.video_source="data/pan_fire_1.mp4"
+        self.video_source="data/n_smoke_1.mp4"
         # 웹캠 및 제스처 컨트롤러 초기화
         self.cap = None
         self.gesture_controller = GestureController()
@@ -70,13 +72,13 @@ class KitchenApp(QWidget):
 
     def get_icon(self, filename):
         """img 폴더 내의 아이콘 파일을 안전하게 로드하는 헬퍼 메서드"""
-        path = os.path.join("img", filename)
-        return QIcon(path) if os.path.exists(path) else QIcon()
+        path =  ICON_DIR / filename
+        return QIcon(str(path)) if path.exists() else QIcon()
 
     def init_UI(self):
         """메인 GUI 레이아웃 및 스타일을 초기화하는 메서드"""
         self.setWindowTitle("Smart Kitchen Assistant")
-        self.setWindowIcon(QIcon(os.path.join("img", "01_chef_hat.png")))
+        self.setWindowIcon(QIcon(os.path.join("img","01_chef_hat_png")))
         self.resize(1150, 750) 
         self.setMinimumSize(0, 0)
         
@@ -118,9 +120,9 @@ class KitchenApp(QWidget):
 
         #제목 옆에 아이콘 추가
         self.lbl_title_icon = QLabel()
-        title_pixmap = QPixmap(os.path.join("img", "chef.png"))
+        self.title_pixmap = QPixmap(str(ICON_DIR/"chef.png"))
         self.lbl_title_icon.setPixmap(
-            title_pixmap.scaled(43, 43, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.title_pixmap.scaled(43, 43, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         )
         self.lbl_title_icon.setFixedSize(46, 46)
         self.lbl_title_icon.setAlignment(Qt.AlignCenter)
