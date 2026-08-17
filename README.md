@@ -37,35 +37,52 @@
 * **확장성**: 디스플레이의 기본 탑재 SW로 확장 가능.
 
 ---
-
 ## 🏗️ 4. 프로젝트 구조 (Directory Structure)
 
 본 프로젝트는 **단일 책임 원칙(SRP)**과 **객체지향 프로그래밍(OOP)** 규칙에 맞추어 모듈화되어 있습니다.
 
 ```text
 smart_kitchen_assistant/
-|
-├──assets/                     #UI 리소스
-|   └── icons/                 #버튼 및 화면 아이콘  
 │
-├── data/                      # 데이터 관리 폴더
-│   └── gesture_data.csv       # 손동작 학습 데이터
+├── .vscode/
+│   └── settings.json                 # VS Code 프로젝트 설정
 │
-├── models/                    # AI 모델 가중치 (.pt) 파일 관리
-│   ├── yolov8n.pt        # 포즈 추정 경량 기본 모델
-│   └── custom_smoke_best.pt   # 파인튜닝 완료된 연기 감지 모델
+├── assets/                           # UI 리소스
+│   └── icons/                        # 버튼 및 화면 아이콘
 │
-├── src/                       # 핵심 소스코드 (OOP 모듈)
-│   ├── __init__.py
-│   ├── smoke_detector.py      # [클래스] 연기 감지 전담 모듈
-│   ├── gesture_controller.py  # [클래스] 손동작 추적 및 OS 조작 전담 모듈
-│   └── kitchen_ui_overlay.py  # [클래스] 대시보드 UI 및 경고 시각화 전담 모듈
+├── data/                             # 데이터 관리 폴더
+│   └── gesture_train.csv             # 손동작 학습 데이터
 │
-├── .gitignore                 # Git 추척 제외 설정
-├── train_smoke_model.py       # [실행] 연기 감지 모델 학습 스크립트
-├── main.py                    # [실행] 메인 애플리케이션 엔트리 포인트
-├── README.md                  # 프로젝트 설명
-└── requirements.txt           # 의존성 라이브러리 목록
+├── models/                           # AI 모델 가중치(.pt) 파일 관리
+│   ├── custom_smoke_best.pt          # 연기 감지 학습 모델
+│   ├── custom_smoke_best_v2.pt       # 연기 감지 모델 개선 버전
+│   ├── custom_smoke_best_v3.pt       # 연기 감지 모델 개선 버전
+│   ├── custom_smoke_best_v4.pt       # 연기 감지 모델 개선 버전
+│   └── yolov8n.pt                    # YOLOv8 기본 모델
+│
+├── src/                              # 핵심 소스코드 (OOP 모듈)
+│   │
+│   ├── burner/                       # 화구 및 연기 감지 관련 모듈
+│   │   ├── __init__.py               # burner 패키지 초기화
+│   │   ├── burner_detector.py        # 화구 영역 감지 및 처리
+│   │   └── smoke_detector.py         # 연기 감지 처리
+│   │
+│   ├── gesture/                      # 손동작 및 제어 관련 모듈
+│   │   ├── __init__.py               # gesture 패키지 초기화
+│   │   ├── controller.py             # 손동작 인식 및 동작 제어
+│   │   ├── voice_detector.py         # 음성 입력 감지 관련 처리
+│   │   ├── web_control.py            # 웹 브라우저 제어
+│   │   └── youtube_controller.py     # YouTube 제어 기능
+│   │
+│   ├── __init__.py                   # src 패키지 초기화
+│   └── kitchen_ui_overlay.py         # 대시보드 UI 및 화면 오버레이 처리
+│
+├── .gitignore                        # Git 추적 제외 설정
+├── README.md                         # 프로젝트 설명 문서
+├── main.py                           # 애플리케이션 실행 진입점
+├── requirements.txt                  # 프로젝트 의존 라이브러리 목록
+└── train_smoke_model.py              # 연기 감지 YOLO 모델 학습 스크립트
+```
 
 ```
 ## 데이터셋 안내
