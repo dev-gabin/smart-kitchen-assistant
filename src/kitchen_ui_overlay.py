@@ -17,6 +17,8 @@ from src.gesture import GestureController, VoiceAssistant
 from src.burner import SmokeDetector, draw_smoke_boxes
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ICON_DIR = PROJECT_ROOT / "assets" / "icons"
+
+
 class KitchenApp(QWidget):
     def __init__(self):
         super().__init__()
@@ -78,7 +80,7 @@ class KitchenApp(QWidget):
     def init_UI(self):
         """메인 GUI 레이아웃 및 스타일을 초기화하는 메서드"""
         self.setWindowTitle("Smart Kitchen Assistant")
-        self.setWindowIcon(QIcon(os.path.join("img","01_chef_hat_png")))
+        self.setWindowIcon(QIcon(str(ICON_DIR / "01_chef_hat.png")))
         self.resize(1150, 750) 
         self.setMinimumSize(0, 0)
         
@@ -198,7 +200,7 @@ class KitchenApp(QWidget):
         cam_header = QHBoxLayout()
         
         cam_icon_lbl = QLabel()
-        cam_pixmap = QPixmap("img/08_settings.png")
+        cam_pixmap = QPixmap(str(ICON_DIR / "08_settings.png"))
         if not cam_pixmap.isNull():
             cam_icon_lbl.setPixmap(cam_pixmap.scaled(26, 26, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         cam_icon_lbl.setStyleSheet("border: none; background: transparent;")
@@ -239,7 +241,7 @@ class KitchenApp(QWidget):
         t_header.setContentsMargins(0,0,0,0)
         
         t_icon_lbl = QLabel()
-        t_pixmap = QPixmap("img/03_clock_1.png")
+        t_pixmap = QPixmap(str(ICON_DIR / "03_clock_1.png"))
         if not t_pixmap.isNull():
             t_icon_lbl.setPixmap(t_pixmap.scaled(26, 26, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         t_icon_lbl.setStyleSheet("border: none; background: transparent;")
@@ -416,7 +418,7 @@ class KitchenApp(QWidget):
         
         lbl_icon = QLabel()
         lbl_icon.setStyleSheet("border: none; background: transparent;")
-        pixmap = QPixmap(os.path.join("img", icon_file))
+        pixmap = QPixmap(str(ICON_DIR / icon_file))
         if not pixmap.isNull():
             lbl_icon.setPixmap(pixmap.scaled(50, 50, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         lbl_name = QLabel(name)
@@ -489,7 +491,7 @@ class KitchenApp(QWidget):
         layout.setContentsMargins(20, 15, 20, 15)
         
         icon_lbl = QLabel()
-        pixmap = QPixmap(os.path.join("img", icon_file))
+        pixmap = QPixmap(str(ICON_DIR / icon_file))
         if not pixmap.isNull():
             icon_lbl.setPixmap(pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         icon_lbl.setFixedSize(50, 50)
