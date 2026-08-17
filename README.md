@@ -29,6 +29,10 @@
 * **Pose Estimation**: `YOLOv8-Pose`를 통해 사람의 상체 관절(Keypoints) 좌표를 실시간 추적.
 * **OS 이벤트 매핑**: 손 올리기 제스처 감지 시 `PyAutoGUI`를 이용해 키보드/마우스 명령어(Space, Arrow Keys 등)를 자동 전송하여 레시피 재생/일시정지 및 스크롤 제어.
 
+### 3️⃣ 음성 인식 기반 타이머 안내 (Voice-based Timer Guidance)
+Voice Recognition: 사용자의 음성 명령을 인식하여 타이머의 남은 시간 확인 요청을 처리
+Timer Guidance: 조리 중 화면을 직접 조작하지 않고 현재 타이머의 남은 시간을 음성으로 안내
+
 ---
 
 ## 🛡️ 3. 온디바이스 SW 및 시장 타당성 (Value Proposition)
